@@ -220,7 +220,7 @@ async function doLogin(){
    4. 데이터 상태
    ============================================================ */
 let invLogs=[], orders=[], dealers=[];
-let audit={ products:{}, audit:{}, outMeta:{}, inMeta:{}, manualMoves:{}, config:{ shipFee:4500 } };
+let audit={ products:{}, audit:{}, outMeta:{}, inMeta:{}, manualMoves:{}, extraFees:{}, config:{ shipFee:4500 } };
 let adminsList={};
 let _curTab='dash', _amtLoaded=false, _auditLoaded=false;
 function defaultProducts(){
@@ -291,8 +291,8 @@ function subscribe(){
   } else { _amtLoaded=true; }
   onValue(ref(newDb,'audit_data'), async snap=>{
     const d=snap.val();
-    if(!d || !d.products){ audit={ products:defaultProducts(), audit:{}, outMeta:{}, inMeta:{}, manualMoves:{}, config:{shipFee:4500} }; try{ await set(ref(newDb,'audit_data'), audit); }catch(e){} }
-    else { audit={ products:d.products||defaultProducts(), audit:d.audit||{}, outMeta:d.outMeta||{}, inMeta:d.inMeta||{}, manualMoves:d.manualMoves||{}, config:d.config||{shipFee:4500} }; }
+    if(!d || !d.products){ audit={ products:defaultProducts(), audit:{}, outMeta:{}, inMeta:{}, manualMoves:{}, extraFees:{}, config:{shipFee:4500} }; try{ await set(ref(newDb,'audit_data'), audit); }catch(e){} }
+    else { audit={ products:d.products||defaultProducts(), audit:d.audit||{}, outMeta:d.outMeta||{}, inMeta:d.inMeta||{}, manualMoves:d.manualMoves||{}, extraFees:d.extraFees||{}, config:d.config||{shipFee:4500} }; }
     _auditLoaded=true; render();
   }, err=>{ toast('감사DB 읽기 실패: '+err.message,'error'); });
   onValue(ref(newDb,'inv_admins'), snap=>{ adminsList=snap.val()||{}; if(_curTab==='set') render(); });
@@ -429,19 +429,49 @@ function viewOutbound(){
 /* 12. 택배비 관리 */
 function allFeeRows(){
   const rows=[];
-  amtOutbounds().forEach(i=>{ const meta=audit.outMeta[i.id]||{}; const fee=meta.fee!=null?toNum(meta.fee):defaultFee(); if(fee>0) rows.push({date:i.date,vendor:i.vendor,prod:prodNameByAmt(i.product),qty:Math.abs(i.qty),fee}); });
-  toArr(audit.manualMoves).filter(m=>m.dir==='out' && toNum(m.fee)>0).forEach(m=>{ const p=audit.products[m.prodKey]||{}; rows.push({date:m.date,vendor:m.vendor||'',prod:p.name||m.prodKey,qty:toNum(m.qty),fee:toNum(m.fee)}); });
+  amtOutbounds().forEach(i=>{ const meta=audit.outMeta[i.id]||{}; const fee=meta.fee!=null?toNum(meta.fee):defaultFee(); if(fee>0) rows.push({date:i.date,vendor:i.vendor,prod:prodNameByAmt(i.product),qty:Math.abs(i.qty),fee,kind:'amt',id:null}); });
+  toArr(audit.manualMoves).filter(m=>m.dir==='out' && toNum(m.fee)>0).forEach(m=>{ const p=audit.products[m.prodKey]||{}; rows.push({date:m.date,vendor:m.vendor||'',prod:p.name||m.prodKey,qty:toNum(m.qty),fee:toNum(m.fee),kind:'manual',id:null}); });
+  Object.keys(audit.extraFees||{}).forEach(id=>{ const x=audit.extraFees[id]; if(!x||toNum(x.fee)<=0) return; const p=x.prodKey?(audit.products[x.prodKey]||{}):{}; rows.push({date:x.date,vendor:x.vendor||'',prod:x.prodKey?(p.name||x.prodKey):'기타',qty:0,fee:toNum(x.fee),note:x.note||'',kind:'extra',id}); });
   return rows.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
 }
 function viewFee(){
   const rows=allFeeRows(); const byMonth={};
   rows.forEach(r=>{ const m=(r.date||'').slice(0,7); (byMonth[m]=byMonth[m]||{cnt:0,sum:0}); byMonth[m].cnt++; byMonth[m].sum+=r.fee; });
   const months=Object.keys(byMonth).sort().reverse(); const total=rows.reduce((s,r)=>s+r.fee,0); const curMonth=todayStr().slice(0,7);
-  const monthCards=months.slice(0,6).map(m=>{ const d=byMonth[m]; return `<div class="box-chip" style="padding:12px 16px;border-radius:12px;${m===curMonth?'border-color:var(--blue);background:var(--blue-bg)':''}"><div style="font-size:.78rem;color:var(--sub)">${m}${m===curMonth?' (이번달)':''}</div><div style="font-size:1.25rem;font-weight:800" class="mono">₩${fmt(d.sum)}</div><div style="font-size:.72rem;color:var(--sub)">출고 ${d.cnt}건 · 익월 초 정산</div></div>`; }).join('');
-  const detail=rows.slice(0,80).map(r=>`<tr><td>${escHtml(r.date)}</td><td>${escHtml(r.vendor)}</td><td>${escHtml(r.prod)}</td><td class="num mono">${fmt(r.qty)}</td><td class="num mono" style="color:var(--blue)">₩${fmt(r.fee)}</td></tr>`).join('');
-  return `<h1 class="page-title">🚚 택배비 관리</h1><p class="page-sub">출고 기록 기반 · 익월 초 정산 기준 · 총 누계 <b>₩${fmt(total)}</b></p>
-    <div class="card"><div class="row-flex" style="gap:12px">${monthCards||'<span class="empty">기록 없음</span>'}</div></div>
-    <div class="card"><h3 style="margin:0 0 10px;font-size:.95rem">상세 내역 (최근 80건)</h3><div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>거래처</th><th>제품</th><th class="num">출고수량(개)</th><th class="num">택배비</th></tr></thead><tbody>${detail||'<tr><td colspan="5" class="empty">택배비 기록 없음</td></tr>'}</tbody></table></div></div>`;
+  const monthCards=months.slice(0,6).map(m=>{ const d=byMonth[m]; return `<div class="box-chip" style="padding:12px 16px;border-radius:12px;${m===curMonth?'border-color:var(--blue);background:var(--blue-bg)':''}"><div style="font-size:.78rem;color:var(--sub)">${m}${m===curMonth?' (이번달)':''}</div><div style="font-size:1.25rem;font-weight:800" class="mono">₩${fmt(d.sum)}</div><div style="font-size:.72rem;color:var(--sub)">건수 ${d.cnt}건 · 익월 초 정산</div></div>`; }).join('');
+  const detail=rows.slice(0,120).map(r=>`<tr><td>${escHtml(r.date)}</td><td>${escHtml(r.vendor)||'<span style="color:#cbd5e1">—</span>'}</td><td>${r.kind==='extra'?'<span class="badge b-gray">기타</span> ':''}${escHtml(r.prod)}</td><td class="num mono">${r.qty>0?fmt(r.qty):'<span style="color:#cbd5e1">—</span>'}</td><td class="num mono" style="color:var(--blue)">₩${fmt(r.fee)}</td><td style="text-align:right">${r.kind==='extra'?`<button class="btn btn-ghost btn-sm" data-delfee="${escHtml(r.id)}">삭제</button>`:'<span style="color:#cbd5e1">—</span>'}</td></tr>`).join('');
+  return `<h1 class="page-title">🚚 택배비 관리</h1><p class="page-sub">출고 기록 + 기타 택배비 · 익월 초 정산 기준 · 총 누계 <b>₩${fmt(total)}</b></p>
+    <div class="card"><div class="row-flex" style="justify-content:space-between"><h3 style="margin:0;font-size:.95rem">월별 택배비 현황</h3><button class="btn btn-blue btn-sm" id="addFeeBtn">+ 택배비 추가</button></div>
+      <div class="row-flex" style="gap:12px;margin-top:12px">${monthCards||'<span class="empty">기록 없음</span>'}</div></div>
+    <div class="info-banner">제품 발송 외 택배(서류·샘플 등)는 <b>+ 택배비 추가</b>로 거래처·제품 없이 택배비만 등록할 수 있습니다. 재고에는 영향이 없습니다.</div>
+    <div class="card"><h3 style="margin:0 0 10px;font-size:.95rem">상세 내역 (최근 120건)</h3><div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>거래처</th><th>제품</th><th class="num">출고수량(개)</th><th class="num">택배비</th><th style="text-align:right">관리</th></tr></thead><tbody>${detail||'<tr><td colspan="6" class="empty">택배비 기록 없음</td></tr>'}</tbody></table></div></div>`;
+}
+/* 기타 택배비 추가 모달 (거래처·제품 없이 택배비만 가능) */
+function openExtraFeeModal(){
+  const manualOpts=prodList().map(p=>`<option value="${p.key}">${escHtml(p.name)}</option>`).join('');
+  const m=document.createElement('div'); m.className='modal-bg';
+  m.innerHTML='<div class="modal"><h3>+ 택배비 추가</h3>'+
+    '<div class="info-banner" style="margin-bottom:14px">제품·수량이 없어도 <b>택배비만</b> 등록할 수 있습니다. (거래처·제품은 선택사항)</div>'+
+    '<div class="field"><label>날짜 *</label><input id="xf_date" type="date" value="'+todayStr()+'"></div>'+
+    '<div class="field"><label>거래처 (선택)</label><input id="xf_vendor" placeholder="비워둬도 됩니다"></div>'+
+    '<div class="field"><label>제품 (선택)</label><select id="xf_prod"><option value="">— 제품 없음 —</option>'+manualOpts+'</select></div>'+
+    '<div class="field"><label>택배비 (원) *</label><input id="xf_fee" type="number" placeholder="택배비 입력 (필수)"></div>'+
+    '<div class="field"><label>비고 (선택)</label><input id="xf_note" placeholder="예: 서류 발송, 샘플 발송 등"></div>'+
+    '<div class="modal-foot"><button class="btn btn-ghost" id="xf_cancel">취소</button><button class="btn btn-blue" id="xf_save">+ 추가</button></div></div>';
+  document.body.appendChild(m);
+  m.addEventListener('click',e=>{ if(e.target===m) m.remove(); });
+  m.querySelector('#xf_cancel').addEventListener('click',()=>m.remove());
+  m.querySelector('#xf_save').addEventListener('click',async()=>{
+    const date=m.querySelector('#xf_date').value;
+    const vendor=(m.querySelector('#xf_vendor').value||'').trim();
+    const prodKey=m.querySelector('#xf_prod').value||'';
+    const fee=toNum(m.querySelector('#xf_fee').value);
+    const note=(m.querySelector('#xf_note').value||'').trim();
+    if(!date||fee<=0){ toast('날짜와 택배비를 입력하세요','error'); return; }
+    const id='xf_'+Date.now();
+    try{ await set(ref(newDb,'audit_data/extraFees/'+id), {id,date,vendor,prodKey,fee,note,createdAt:new Date().toISOString()}); toast('✅ 택배비 추가됨','ok'); m.remove(); }
+    catch(e){ toast('추가 실패: '+e.message,'error'); }
+  });
 }
 
 /* 13. 제품 관리 (관리자 모두 수정 가능) */
@@ -510,6 +540,8 @@ document.addEventListener('click', async (e)=>{
   if(t.id==='moSave'){ await addManualMove('out'); return; }
   if(t.dataset.delmove){ if(!confirm('이 기록을 삭제할까요?')) return; const id=t.dataset.delmove; delete audit.manualMoves[id]; await saveAudit('manualMoves/'+id,null); return; }
   if(t.id==='setFeeSave'){ audit.config.shipFee=toNum(document.getElementById('setFee').value)||4500; await saveAudit('config',audit.config); return; }
+  if(t.id==='addFeeBtn'){ openExtraFeeModal(); return; }
+  if(t.dataset.delfee){ if(!confirm('이 택배비 기록을 삭제할까요?')) return; const id=t.dataset.delfee; try{ await set(ref(newDb,'audit_data/extraFees/'+id),null); toast('삭제되었습니다','ok'); }catch(err){ toast('삭제 실패: '+err.message,'error'); } return; }
   if(t.id==='addAdminBtn'){ openAdminModal(); return; }
   if(t.dataset.deladmin){ if(!isSuper()){ toast('총괄관리자만 가능합니다','error'); return; } const key=t.dataset.deladmin; if(!confirm('이 관리자를 삭제할까요? (로그인 불가가 됩니다)')) return; try{ await set(ref(newDb,'inv_admins/'+key),null); await set(ref(newDb,'admin_emails/'+key),null); toast('삭제되었습니다','ok'); }catch(err){ toast('삭제 실패: '+err.message,'error'); } return; }
   if(t.id==='logoutBtn'){ try{await signOut(newAuth);}catch(e){} try{await signOut(amtAuth);}catch(e){} location.reload(); return; }
