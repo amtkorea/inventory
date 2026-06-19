@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>KY 재고 감사 시스템</title>
+<style>
+  :root{
+    --green-bg:#dcfce7; --green:#16a34a; --pink-bg:#fce7f3; --pink:#db2777;
+    --red-bg:#fee2e2; --red:#dc2626; --bg:#f1f5f9; --card:#fff; --line:#e2e8f0;
+    --txt:#0f172a; --sub:#64748b; --blue:#2563eb; --blue-bg:#eff6ff;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic",sans-serif;background:var(--bg);color:var(--txt);font-size:15px;}
+  button{font-family:inherit;cursor:pointer;}
+  input,select,textarea{font-family:inherit;font-size:14px;}
+  .hidden{display:none!important;}
+  #loginView{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .auth-box{background:#fff;border-radius:18px;padding:30px 26px;width:100%;max-width:400px;box-shadow:0 10px 40px rgba(0,0,0,.08);}
+  .auth-box h1{font-size:1.25rem;margin:0 0 4px;display:flex;align-items:center;gap:8px;}
+  .auth-box .logo{width:36px;height:36px;border-radius:10px;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.9rem;flex:0 0 auto;}
+  .auth-box p{color:var(--sub);font-size:.82rem;margin:0 0 18px;line-height:1.5;}
+  .auth-box label{display:block;font-size:.8rem;font-weight:600;margin:12px 0 5px;}
+  .auth-box input{width:100%;padding:11px 13px;border:1.5px solid var(--line);border-radius:10px;outline:none;}
+  .auth-box input:focus{border-color:var(--blue);}
+  .auth-box button.primary{width:100%;margin-top:18px;padding:13px;border:none;border-radius:10px;background:var(--blue);color:#fff;font-weight:700;font-size:.95rem;}
+  .msg{margin-top:12px;font-size:.82rem;text-align:center;min-height:18px;}
+  .hint{background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:.74rem;color:var(--sub);line-height:1.6;margin-top:14px;}
+  header{background:#fff;border-bottom:1px solid var(--line);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:30;}
+  header .brand{display:flex;align-items:center;gap:9px;font-weight:800;font-size:1rem;}
+  header .brand .logo{width:30px;height:30px;border-radius:8px;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.78rem;}
+  header .right{display:flex;align-items:center;gap:10px;font-size:.78rem;color:var(--sub);}
+  .dot{width:8px;height:8px;border-radius:50%;background:#cbd5e1;display:inline-block;}
+  .dot.on{background:var(--green);} .dot.err{background:var(--red);}
+  .icon-btn{background:#f1f5f9;border:none;border-radius:8px;padding:6px 10px;font-size:.78rem;color:var(--sub);font-weight:600;}
+  .role-chip{font-size:.68rem;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--blue-bg);color:var(--blue);}
+  nav{background:#fff;border-bottom:1px solid var(--line);display:flex;gap:2px;padding:0 8px;overflow-x:auto;position:sticky;top:51px;z-index:29;}
+  nav button{background:none;border:none;padding:12px 14px;font-size:.86rem;font-weight:600;color:var(--sub);border-bottom:2.5px solid transparent;white-space:nowrap;}
+  nav button.active{color:var(--blue);border-bottom-color:var(--blue);}
+  main{padding:16px;max-width:1100px;margin:0 auto;}
+  .page-title{font-size:1.15rem;font-weight:800;margin:0 0 2px;display:flex;align-items:center;gap:7px;}
+  .page-sub{color:var(--sub);font-size:.82rem;margin:0 0 16px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px;}
+  .info-banner{background:var(--blue-bg);border:1px solid #bfdbfe;border-radius:12px;padding:12px 14px;font-size:.82rem;color:#1e40af;margin-bottom:14px;line-height:1.6;}
+  .warn-banner{background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:11px 14px;font-size:.8rem;color:#92400e;margin-bottom:14px;line-height:1.5;}
+  .badge{display:inline-flex;align-items:center;gap:4px;font-size:.72rem;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;}
+  .b-green{background:var(--green-bg);color:var(--green);} .b-pink{background:var(--pink-bg);color:var(--pink);}
+  .b-red{background:var(--red-bg);color:var(--red);} .b-gray{background:#f1f5f9;color:#64748b;} .b-amt{background:var(--blue-bg);color:var(--blue);}
+  .prod-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;}
+  .prod-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:15px;}
+  .prod-card .pc-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;}
+  .prod-card .pname{font-weight:800;font-size:1rem;}
+  .prod-card .ptag{font-size:.68rem;color:var(--sub);margin-top:2px;}
+  .prod-card .stock{font-size:1.7rem;font-weight:800;line-height:1.1;margin:6px 0 2px;}
+  .prod-card .stock small{font-size:.85rem;font-weight:600;color:var(--sub);}
+  .prod-card .blank-stock{font-size:1rem;font-weight:700;color:#cbd5e1;}
+  .box-line{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;font-size:.78rem;}
+  .box-chip{background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:4px 9px;}
+  .box-chip b{color:var(--txt);}
+  .pc-foot{display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:9px;border-top:1px dashed var(--line);font-size:.78rem;color:var(--sub);}
+  .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  table{width:100%;border-collapse:collapse;font-size:.85rem;min-width:560px;}
+  th,td{padding:10px 9px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap;}
+  th{font-size:.74rem;color:var(--sub);font-weight:700;background:#f8fafc;position:sticky;top:0;}
+  td.num,th.num{text-align:right;}
+  tr:last-child td{border-bottom:none;}
+  .cell-input{width:72px;padding:6px 7px;border:1.5px solid var(--line);border-radius:7px;text-align:right;}
+  .cell-input:focus{border-color:var(--blue);outline:none;}
+  .cell-input.wide{width:130px;text-align:left;}
+  .btn{border:none;border-radius:9px;padding:9px 14px;font-weight:700;font-size:.84rem;}
+  .btn-blue{background:var(--blue);color:#fff;} .btn-ghost{background:#f1f5f9;color:#334155;} .btn-red{background:var(--red-bg);color:var(--red);}
+  .btn-sm{padding:6px 11px;font-size:.78rem;}
+  .row-flex{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .audit-prod{border:1px solid var(--line);border-radius:14px;margin-bottom:12px;overflow:hidden;}
+  .audit-head{display:flex;justify-content:space-between;align-items:center;padding:13px 15px;cursor:pointer;background:#fff;}
+  .audit-head .ah-left{display:flex;align-items:center;gap:9px;flex-wrap:wrap;}
+  .audit-head .sys{font-size:.8rem;color:var(--sub);}
+  .audit-body{padding:0 15px 15px;border-top:1px solid var(--line);display:none;}
+  .audit-body.open{display:block;}
+  .loc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:12px;}
+  .loc-box{border:1px solid var(--line);border-radius:11px;padding:12px;}
+  .loc-box h4{margin:0 0 9px;font-size:.85rem;display:flex;justify-content:space-between;}
+  .loc-box .lb-sum{color:var(--blue);font-weight:700;}
+  .loc-inputs{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;}
+  .loc-inputs label{font-size:.66rem;color:var(--sub);display:block;margin-bottom:3px;}
+  .loc-inputs input{width:100%;padding:7px 5px;border:1.5px solid var(--line);border-radius:7px;text-align:center;}
+  .conv-note{font-size:.66rem;color:var(--sub);margin-top:3px;}
+  .diff-bar{display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding:11px 13px;border-radius:10px;background:#f8fafc;}
+  .diff-bar .dval{font-size:1.3rem;font-weight:800;}
+  .empty{text-align:center;color:var(--sub);padding:28px;font-size:.85rem;}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:12px 20px;border-radius:10px;font-size:.85rem;font-weight:600;z-index:100;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90%;}
+  .toast.show{opacity:1;} .toast.err{background:var(--red);} .toast.ok{background:var(--green);}
+  .mono{font-variant-numeric:tabular-nums;}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px;}
+  .modal{background:#fff;border-radius:16px;padding:22px;width:100%;max-width:380px;}
+  .modal h3{margin:0 0 14px;font-size:1.05rem;}
+  .modal .field{margin-bottom:11px;}
+  .modal .field label{display:block;font-size:.78rem;font-weight:600;margin-bottom:5px;color:var(--sub);}
+  .modal .field input,.modal .field select{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:9px;outline:none;}
+  .modal-foot{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;}
+  @media(max-width:600px){ main{padding:12px;} .loc-inputs{grid-template-columns:1fr 1fr;} }
+</style>
+</head>
+<body>
+<div id="loginView">
+  <div class="auth-box">
+    <h1><span class="logo">KY</span> 재고 감사 시스템</h1>
+    <p>AMT·KY 합산재고 점검 · 관리자 전용</p>
+    <label>이메일</label>
+    <input type="email" id="email" placeholder="이메일" autocomplete="username">
+    <label>비밀번호</label>
+    <input type="password" id="pw" placeholder="비밀번호" autocomplete="current-password">
+    <button class="primary" id="loginBtn">로그인</button>
+    <div id="loginMsg" class="msg"></div>
+    <div class="hint">총괄관리자(kyunghoyou)는 처음 입력한 비밀번호로 자동 등록됩니다. 일반관리자는 총괄관리자가 <b>설정 → 관리자 관리</b>에서 등록해야 로그인할 수 있습니다.</div>
+  </div>
+</div>
+<div id="appView" class="hidden">
+  <header>
+    <div class="brand"><span class="logo">KY</span> 재고 감사 시스템</div>
+    <div class="right">
+      <span class="role-chip" id="roleChip"></span>
+      <span><span class="dot" id="connDot"></span> <span id="connTxt">연결 중</span></span>
+      <button class="icon-btn" id="refreshBtn">↻ 새로고침</button>
+      <button class="icon-btn" id="logoutBtn">로그아웃</button>
+    </div>
+  </header>
+  <nav id="nav"></nav>
+  <main id="content"></main>
+</div>
+<div class="toast" id="toast"></div>
+<script type="module">
+import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, get, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+/* ============================================================
+   1. Firebase 두 개 연결
+   - NEW : inventory-management (이 앱 전용 · 로그인/관리자/감사데이터)
+   - AMT : amt-ky (주문/재고 데이터 · 읽기 전용)
+   ============================================================ */
+const NEW_CFG = {
+  apiKey: "AIzaSyB4ofXuOmNT-Yqa7Y_2lPYhJ5KigrFH2yM",
+  authDomain: "inventory-management-9a77b.firebaseapp.com",
+  projectId: "inventory-management-9a77b",
+  storageBucket: "inventory-management-9a77b.firebasestorage.app",
+  messagingSenderId: "216049459715",
+  appId: "1:216049459715:web:ba798f734c91a47849e436",
+  databaseURL: "https://inventory-management-9a77b-default-rtdb.asia-southeast1.firebasedatabase.app"
+};
+const AMT_CFG = {
+  apiKey: "AIzaSyC2jfTHmaguOS9e_ddTvicUZJcvXzQ7EKI",
+  authDomain: "amt-ky.firebaseapp.com",
+  projectId: "amt-ky",
+  storageBucket: "amt-ky.firebasestorage.app",
+  messagingSenderId: "1082363760608",
+  appId: "1:1082363760608:web:ac27fa51dc23cb603ee585",
+  databaseURL: "https://amt-ky-default-rtdb.asia-southeast1.firebasedatabase.app"
+};
+const newApp  = getApps().find(a=>a.name==='ky-inv') || initializeApp(NEW_CFG,'ky-inv');
+const newAuth = getAuth(newApp);
+const newDb   = getDatabase(newApp);
+const amtApp  = getApps().find(a=>a.name==='amt-read') || initializeApp(AMT_CFG,'amt-read');
+const amtAuth = getAuth(amtApp);
+const amtDb   = getDatabase(amtApp);
+
+const SUPER_EMAIL='kyunghoyou@gmail.com';
+let curEmail='', curName='', curRole='admin', amtReadOk=false;
+function isSuper(){ return curRole==='super'; }
+
+/* ============================================================
+   2. 공통 헬퍼
+   ============================================================ */
+function escHtml(s){ if(s==null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function fmt(n){ n=Math.round(Number(n)||0); return n.toLocaleString('ko-KR'); }
+function toNum(v){ const n=parseFloat(String(v).replace(/,/g,'')); return isNaN(n)?0:n; }
+function toArr(v){ if(!v) return []; return Array.isArray(v)?v.filter(x=>x):Object.values(v).filter(x=>x); }
+function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function monthsAgoStr(n){ const d=new Date(); d.setMonth(d.getMonth()-n); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function emailKey(email){ return String(email||'').trim().toLowerCase().replace(/\./g,','); }
+function dummyPwAmt(email){ return 'amtky2026_'+(email||'').toLowerCase().replace(/[^a-z0-9]/g,'_')+'_x'; }
+function dummyPwNew(email){ return 'invaudit2026_'+(email||'').toLowerCase().replace(/[^a-z0-9]/g,'_')+'_x'; }
+let _toastT=null;
+function toast(msg,type){ const t=document.getElementById('toast'); t.textContent=msg; t.className='toast show'+(type==='error'?' err':type==='ok'?' ok':''); clearTimeout(_toastT); _toastT=setTimeout(()=>{ t.className='toast'; },2400); }
+
+/* ============================================================
+   3. 로그인 (GMP식: 이메일+비밀번호, inv_admins 검증)
+   ============================================================ */
+async function ensureAuthNew(email){ const pw=dummyPwNew(email); try{ await signInWithEmailAndPassword(newAuth,email,pw); }catch(e){ await createUserWithEmailAndPassword(newAuth,email,pw); } }
+async function ensureAuthAmt(email){ const pw=dummyPwAmt(email); try{ await signInWithEmailAndPassword(amtAuth,email,pw); }catch(e){ try{ await createUserWithEmailAndPassword(amtAuth,email,pw); }catch(_){} } }
+
+async function doLogin(){
+  const email=(document.getElementById('email').value||'').trim().toLowerCase();
+  const pw=(document.getElementById('pw').value||'').trim();
+  const msg=document.getElementById('loginMsg'), btn=document.getElementById('loginBtn');
+  if(!email||!pw){ msg.style.color='#dc2626'; msg.textContent='이메일과 비밀번호를 입력하세요'; return; }
+  btn.disabled=true; msg.style.color='#64748b'; msg.textContent='🔐 로그인 중...';
+  try{
+    await ensureAuthNew(email);
+    const key=emailKey(email);
+    let rec=(await get(ref(newDb,'inv_admins/'+key))).val();
+    if(!rec){
+      if(email===SUPER_EMAIL){
+        rec={ email, name:'유경호 (총괄)', code:pw, role:'super', createdAt:Date.now() };
+        await set(ref(newDb,'inv_admins/'+key), rec);
+        await set(ref(newDb,'admin_emails/'+key), true);
+      } else { await signOut(newAuth); throw new Error('등록되지 않은 관리자입니다. 총괄관리자에게 등록을 요청하세요.'); }
+    }
+    if(String(rec.code)!==String(pw)){ await signOut(newAuth); throw new Error('비밀번호가 일치하지 않습니다.'); }
+    if(email===SUPER_EMAIL){ await set(ref(newDb,'admin_emails/'+key), true).catch(()=>{}); }
+    curEmail=email; curName=rec.name||email; curRole=rec.role||'admin';
+    // amt-ky 읽기 로그인 (주문시스템 관리자가 아니면 실패 → 수동데이터만 표시)
+    try{ await ensureAuthAmt(email); amtReadOk=true; }catch(e){ amtReadOk=false; }
+    msg.style.color='#16a34a'; msg.textContent='✅ 로그인 성공';
+    enterApp();
+  }catch(e){ msg.style.color='#dc2626'; msg.textContent='❌ '+(e.message||'로그인 실패'); btn.disabled=false; }
+}
+
+/* ============================================================
+   4. 데이터 상태
+   ============================================================ */
+let invLogs=[], orders=[], dealers=[];
+let audit={ products:{}, audit:{}, outMeta:{}, inMeta:{}, manualMoves:{}, config:{ shipFee:4500 } };
+let adminsList={};
+let _curTab='dash', _amtLoaded=false, _auditLoaded=false;
+function defaultProducts(){
+  return {
+    juc:    { name:'JUC',               amtKey:'JUC',    big:320,  small:80,  loose:1, reorder:true,  ord:1 },
+    dell:   { name:'DELL',              amtKey:'DELL',   big:1000, small:100, loose:1, reorder:true,  ord:2 },
+    medias: { name:'MEDIAS T',          amtKey:'MEDIAS', big:1000, small:50,  loose:1, reorder:true,  ord:3 },
+    tband:  { name:'TBAND S',           amtKey:'',       big:200,  small:50,  loose:1, reorder:false, ord:4, openStock:null },
+    bband_ky:{name:'BBAND (KY재고)',     amtKey:'',       big:120,  small:120, loose:1, reorder:false, ord:5, openStock:null },
+    bband_mp:{name:'BBAND (메디플스재고)', amtKey:'',      big:120,  small:120, loose:1, reorder:false, ord:6, openStock:null }
+  };
+}
+function prodList(){ return Object.keys(audit.products||{}).map(k=>({key:k,...audit.products[k]})).sort((a,b)=>(a.ord||99)-(b.ord||99)); }
+
+/* ============================================================
+   5. 재고 계산 (AMT 앱 calcStock 로직 그대로)
+   ============================================================ */
+function calcStockCompany(prod, company){
+  let logs=invLogs.filter(i=>i.product===prod && (i.company||'AMT')===company);
+  logs.sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.createdAt||'').localeCompare(b.createdAt||''));
+  let total=0;
+  logs.forEach(i=>{ if(i.type==='adjust'){ if(i.adjustMode==='delta') total+=Number(i.qty)||0; else total=Number(i.qty)||0; } else total+=Number(i.qty)||0; });
+  return total;
+}
+function amtCombined(amtKey){ return calcStockCompany(amtKey,'AMT')+calcStockCompany(amtKey,'KY'); }
+function manualStock(key){
+  const p=audit.products[key]; if(!p) return null;
+  const open=(p.openStock==null||p.openStock==='')?null:toNum(p.openStock);
+  const moves=toArr(audit.manualMoves).filter(m=>m.prodKey===key);
+  if(open==null && moves.length===0) return null;
+  let s=open||0; moves.forEach(m=>{ s+=(m.dir==='in'?1:-1)*toNum(m.qty); }); return s;
+}
+function currentStock(p){ if(p.amtKey) return amtReadOk?amtCombined(p.amtKey):null; return manualStock(p.key); }
+function salesLast(p, n){
+  const since=monthsAgoStr(n);
+  if(p.amtKey){ return invLogs.filter(i=>i.product===p.amtKey && (i.company||'AMT')==='KY' && i.type==='out' && String(i.memo||'').startsWith('발주출고') && (i.date||'')>=since).reduce((s,i)=>s+Math.abs(Number(i.qty)||0),0); }
+  return toArr(audit.manualMoves).filter(m=>m.prodKey===p.key && m.dir==='out' && (m.date||'')>=since).reduce((s,m)=>s+Math.abs(toNum(m.qty)),0);
+}
+function reorderStatus(p, stock){
+  if(!p.reorder || stock==null) return {level:'na', label:'—', cls:'b-gray'};
+  const s4=salesLast(p,4), s3=salesLast(p,3);
+  if(s4<=0) return {level:'safe', label:'안전', cls:'b-green'};
+  if(stock<=s3) return {level:'urgent', label:'긴급수입필요', cls:'b-red'};
+  if(stock<=s4) return {level:'need',   label:'수입필요',     cls:'b-pink'};
+  return {level:'safe', label:'안전', cls:'b-green'};
+}
+function breakdown(total, p){
+  let r=Math.max(0,Math.round(Number(total)||0));
+  const B=toNum(p.big)||1, S=toNum(p.small)||0;
+  const big=B>0?Math.floor(r/B):0; r-=big*B;
+  const small=S>0?Math.floor(r/S):0; r-=small*S;
+  return {big, small, loose:r};
+}
+
+/* ============================================================
+   6. 데이터 로드 (실시간 구독)
+   ============================================================ */
+function enterApp(){
+  document.getElementById('loginView').classList.add('hidden');
+  document.getElementById('appView').classList.remove('hidden');
+  document.getElementById('roleChip').textContent=curName;
+  buildNav(); subscribe();
+}
+function subscribe(){
+  if(amtReadOk){
+    onValue(ref(amtDb,'amt_data'), snap=>{ const d=snap.val()||{}; invLogs=toArr(d.invLogs); orders=toArr(d.orders); dealers=toArr(d.dealers); _amtLoaded=true; setConn(true); render(); },
+      err=>{ amtReadOk=false; _amtLoaded=true; setConn(false); render(); });
+  } else { _amtLoaded=true; }
+  onValue(ref(newDb,'audit_data'), async snap=>{
+    const d=snap.val();
+    if(!d || !d.products){ audit={ products:defaultProducts(), audit:{}, outMeta:{}, inMeta:{}, manualMoves:{}, config:{shipFee:4500} }; try{ await set(ref(newDb,'audit_data'), audit); }catch(e){} }
+    else { audit={ products:d.products||defaultProducts(), audit:d.audit||{}, outMeta:d.outMeta||{}, inMeta:d.inMeta||{}, manualMoves:d.manualMoves||{}, config:d.config||{shipFee:4500} }; }
+    _auditLoaded=true; render();
+  }, err=>{ toast('감사DB 읽기 실패: '+err.message,'error'); });
+  onValue(ref(newDb,'inv_admins'), snap=>{ adminsList=snap.val()||{}; if(_curTab==='set') render(); });
+}
+function setConn(ok){ document.getElementById('connDot').className='dot'+(ok?' on':' err'); document.getElementById('connTxt').textContent=ok?'연결됨':(amtReadOk?'연결 끊김':'재고읽기 제한'); }
+async function saveAudit(path, value){ try{ await set(ref(newDb,'audit_data/'+path), value); toast('✅ 저장 완료','ok'); }catch(e){ toast('저장 실패: '+e.message,'error'); } }
+
+/* 7. 네비/라우팅 */
+const TABS=[{k:'dash',t:'📊 대시보드'},{k:'audit',t:'📋 재고 감사'},{k:'in',t:'⬇️ 입고 관리'},{k:'out',t:'⬆️ 출고 관리'},{k:'fee',t:'🚚 택배비'},{k:'prod',t:'📦 제품 관리'},{k:'set',t:'⚙️ 설정'}];
+function buildNav(){ document.getElementById('nav').innerHTML=TABS.map(t=>`<button data-tab="${t.k}" class="${t.k===_curTab?'active':''}">${t.t}</button>`).join(''); }
+function render(){
+  if(!_amtLoaded || !_auditLoaded){ document.getElementById('content').innerHTML='<div class="empty">⏳ 데이터 불러오는 중...</div>'; return; }
+  buildNav();
+  const c=document.getElementById('content');
+  if(_curTab==='dash') c.innerHTML=viewDash();
+  else if(_curTab==='audit') c.innerHTML=viewAudit();
+  else if(_curTab==='in') c.innerHTML=viewInbound();
+  else if(_curTab==='out') c.innerHTML=viewOutbound();
+  else if(_curTab==='fee') c.innerHTML=viewFee();
+  else if(_curTab==='prod') c.innerHTML=viewProducts();
+  else if(_curTab==='set') c.innerHTML=viewSettings();
+}
+function amtWarnBanner(){ return amtReadOk?'':'<div class="warn-banner">⚠️ 이 계정은 주문시스템(AMT) 재고 읽기 권한이 없어 <b>AMT 연동 제품(JUC·DELL·MEDIAS T) 재고가 표시되지 않습니다</b>. 수동 제품만 정상 표시됩니다. (주문시스템 관리자 계정으로 로그인하면 합산재고가 보입니다.)</div>'; }
+
+/* 8. 대시보드 */
+function viewDash(){
+  let needCnt=0;
+  const cards=prodList().map(p=>{
+    const stock=currentStock(p); const st=reorderStatus(p,stock);
+    if(st.level==='need'||st.level==='urgent') needCnt++;
+    const bd=stock==null?null:breakdown(stock,p);
+    const s4=salesLast(p,4); const monthly=s4>0?Math.round(s4/4):0;
+    const remain=(stock!=null && monthly>0)?(stock/monthly).toFixed(1)+'개월':(stock!=null?'충분':'—');
+    const tag=p.amtKey?`<span class="badge b-amt">AMT 연동 (자동)</span>`:`<span class="badge b-gray">수동 입력</span>`;
+    const stockHtml = stock==null?`<div class="blank-stock">${p.amtKey?'— 권한없음 —':'— 직접 입력 —'}</div>`:`<div class="stock mono">${fmt(stock)} <small>개</small></div>`;
+    const boxHtml = bd?`<div class="box-line"><span class="box-chip">대박스 <b>${fmt(bd.big)}</b></span><span class="box-chip">소박스 <b>${fmt(bd.small)}</b></span><span class="box-chip">낱개 <b>${fmt(bd.loose)}</b></span></div>`:'';
+    return `<div class="prod-card"><div class="pc-top"><div><div class="pname">${escHtml(p.name)}</div><div class="ptag">${tag}</div></div><span class="badge ${st.cls}">${st.label}</span></div>${stockHtml}${boxHtml}<div class="pc-foot"><span>최근 4개월 판매 <b class="mono" style="color:var(--txt)">${fmt(s4)}</b>개</span><span>잔여 ${remain}</span></div></div>`;
+  }).join('');
+  return `<h1 class="page-title">📊 대시보드</h1>
+    <p class="page-sub">실제 5종 (BBAND은 KY재고/메디플스재고 분리 표시)${needCnt>0?` · <b style="color:var(--pink)">수입 점검 ${needCnt}건</b>`:''}</p>
+    ${amtWarnBanner()}
+    <div class="info-banner">🩷 <b>수입필요</b> = 재고 ≤ 최근 4개월 판매합계 &nbsp;|&nbsp; ❤️ <b>긴급수입필요</b> = 재고 ≤ 최근 3개월 판매합계<br>AMT 연동 제품(JUC·DELL·MEDIAS T)은 AMT앱의 수입·발주가 <b>자동</b>으로 반영됩니다.</div>
+    <div class="prod-grid">${cards}</div>`;
+}
+
+/* 9. 재고 감사 */
+const LOCS=['지하창고','2층','기타'];
+function locSum(p, loc){ const a=(audit.audit[p.key]&&audit.audit[p.key].loc&&audit.audit[p.key].loc[loc])||{}; return (toNum(a.big)*(toNum(p.big)||1))+(toNum(a.small)*(toNum(p.small)||0))+toNum(a.loose)+toNum(a.etc); }
+function realTotal(p){ return LOCS.reduce((s,loc)=>s+locSum(p,loc),0); }
+function viewAudit(){
+  const items=prodList().map(p=>{
+    const sys=currentStock(p); const real=realTotal(p);
+    const hasReal=LOCS.some(loc=>{ const a=(audit.audit[p.key]&&audit.audit[p.key].loc&&audit.audit[p.key].loc[loc])||{}; return a.big||a.small||a.loose||a.etc; });
+    const diff=sys==null?null:(real-sys); const diffOk=diff===0;
+    const sysTxt=sys==null?'<span style="color:#cbd5e1">미입력</span>':fmt(sys);
+    const badge=sys==null?'<span class="badge b-gray">수동</span>':(!hasReal?'<span class="badge b-gray">실사 전</span>':(diffOk?'<span class="badge b-green">✓ 일치</span>':'<span class="badge b-red">차이 '+(diff>0?'+':'')+fmt(diff)+'</span>'));
+    const locBoxes=LOCS.map(loc=>{
+      const a=(audit.audit[p.key]&&audit.audit[p.key].loc&&audit.audit[p.key].loc[loc])||{}; const ls=locSum(p,loc);
+      return `<div class="loc-box"><h4>${loc} <span class="lb-sum mono">${fmt(ls)}개</span></h4><div class="loc-inputs">
+        <div><label>대박스</label><input type="number" class="aud" data-pk="${p.key}" data-loc="${loc}" data-f="big" value="${a.big!=null?escHtml(a.big):''}" placeholder="0"></div>
+        <div><label>소박스</label><input type="number" class="aud" data-pk="${p.key}" data-loc="${loc}" data-f="small" value="${a.small!=null?escHtml(a.small):''}" placeholder="0"></div>
+        <div><label>낱개</label><input type="number" class="aud" data-pk="${p.key}" data-loc="${loc}" data-f="loose" value="${a.loose!=null?escHtml(a.loose):''}" placeholder="0"></div>
+        <div><label>기타</label><input type="number" class="aud" data-pk="${p.key}" data-loc="${loc}" data-f="etc" value="${a.etc!=null?escHtml(a.etc):''}" placeholder="0"></div>
+      </div><div class="conv-note">대박스×${fmt(p.big)} + 소박스×${fmt(p.small)} + 낱개 + 기타</div></div>`;
+    }).join('');
+    return `<div class="audit-prod"><div class="audit-head" data-toggle="${p.key}"><div class="ah-left"><b>${escHtml(p.name)}</b><span class="sys">시스템 <b class="mono">${sysTxt}</b> · 실사 <b class="mono">${fmt(real)}</b></span>${badge}</div><span style="color:#94a3b8">▾</span></div>
+      <div class="audit-body" id="ab_${p.key}"><div class="loc-grid">${locBoxes}</div>
+      <div class="diff-bar"><div><div style="font-size:.74rem;color:var(--sub)">재고 차이 (실사 − 시스템)</div><div class="dval mono" style="color:${sys==null?'#94a3b8':(diffOk?'var(--green)':'var(--red)')}">${sys==null?'—':(diff>0?'+':'')+fmt(diff)}</div></div>
+      <button class="btn btn-blue" data-savaud="${p.key}">💾 실사 저장</button></div></div></div>`;
+  }).join('');
+  return `<h1 class="page-title">📋 재고 감사</h1><p class="page-sub">위치별(지하창고·2층·기타) 대박스/소박스/낱개를 입력하면 실사 합계가 자동 계산됩니다.</p>
+    ${amtWarnBanner()}
+    <div class="info-banner"><b>실사 재고 = 대박스×박스단위 + 소박스×박스단위 + 낱개 + 기타</b><br><b>차이 = 실사 − 시스템</b> · 0이면 ✓일치, 아니면 빨간색으로 표시됩니다.</div>${items}`;
+}
+
+/* 10. 입고 관리 */
+function amtImports(){ return invLogs.filter(i=>(i.company||'AMT')==='AMT' && i.type==='adjust' && (Number(i.qty)||0)>0).map(i=>({...i,_ts:(i.date||'')+(i.createdAt||'')})).sort((a,b)=>b._ts.localeCompare(a._ts)); }
+function prodNameByAmt(amtKey){ const f=prodList().find(p=>p.amtKey===amtKey); return f?f.name:amtKey; }
+function viewInbound(){
+  const imports=amtImports();
+  const autoRows=imports.map(i=>{ const meta=audit.inMeta[i.id]||{};
+    return `<tr><td>${escHtml(i.date)}</td><td>${escHtml(prodNameByAmt(i.product))} <span class="badge b-amt">AMT</span></td>
+      <td><input class="cell-input wide" data-inmeta="${escHtml(i.id)}" data-f="supplier" value="${escHtml(meta.supplier||'')}" placeholder="공급업체"></td>
+      <td class="num"><input class="cell-input" data-inmeta="${escHtml(i.id)}" data-f="big" value="${meta.big!=null?escHtml(meta.big):''}" placeholder="0"></td>
+      <td class="num"><input class="cell-input" data-inmeta="${escHtml(i.id)}" data-f="small" value="${meta.small!=null?escHtml(meta.small):''}" placeholder="0"></td>
+      <td class="num"><input class="cell-input" data-inmeta="${escHtml(i.id)}" data-f="loose" value="${meta.loose!=null?escHtml(meta.loose):''}" placeholder="0"></td>
+      <td class="num"><b class="mono" style="color:var(--green)">+${fmt(i.qty)}</b></td>
+      <td><input class="cell-input wide" data-inmeta="${escHtml(i.id)}" data-f="note" value="${escHtml(meta.note||i.memo||'')}"></td></tr>`;
+  }).join('');
+  const manualIn=toArr(audit.manualMoves).filter(m=>m.dir==='in').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const manRows=manualIn.map(m=>{ const p=audit.products[m.prodKey]||{};
+    return `<tr><td>${escHtml(m.date)}</td><td>${escHtml(p.name||m.prodKey)} <span class="badge b-gray">수동</span></td><td>${escHtml(m.vendor||'')}</td>
+      <td class="num">${m.big!=null?fmt(m.big):'–'}</td><td class="num">${m.small!=null?fmt(m.small):'–'}</td><td class="num">${m.loose!=null?fmt(m.loose):'–'}</td>
+      <td class="num"><b class="mono" style="color:var(--green)">+${fmt(m.qty)}</b></td><td>${escHtml(m.note||'')} <button class="btn btn-ghost btn-sm" data-delmove="${escHtml(m.id)}">삭제</button></td></tr>`;
+  }).join('');
+  const manualOpts=prodList().filter(p=>!p.amtKey).map(p=>`<option value="${p.key}">${escHtml(p.name)}</option>`).join('');
+  return `<h1 class="page-title">⬇️ 입고 관리</h1><p class="page-sub">AMT 수입은 자동으로 목록에 뜹니다. 대박스/소박스/낱개·공급업체만 직접 입력하세요.</p>
+    <div class="card"><h3 style="margin:0 0 4px;font-size:.95rem">AMT 수입 (자동) · ${imports.length}건</h3><p class="page-sub" style="margin-bottom:10px">합계 수량은 AMT앱 재고이력에서 자동 반영됩니다.</p>
+      <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>제품</th><th>공급업체</th><th class="num">대박스</th><th class="num">소박스</th><th class="num">낱개</th><th class="num">합계(개)</th><th>비고</th></tr></thead><tbody>${autoRows||'<tr><td colspan="8" class="empty">AMT 수입 기록이 없습니다</td></tr>'}</tbody></table></div></div>
+    <div class="card"><h3 style="margin:0 0 10px;font-size:.95rem">수동 제품 입고 등록 (TBAND S · BBAND)</h3>
+      <div class="row-flex" style="margin-bottom:12px"><input type="date" id="miDate" value="${todayStr()}" class="cell-input wide" style="width:150px"><select id="miProd" class="cell-input wide" style="width:160px">${manualOpts}</select><input type="text" id="miVendor" placeholder="공급업체" class="cell-input wide"><input type="number" id="miQty" placeholder="합계수량" class="cell-input" style="width:100px"><input type="number" id="miBig" placeholder="대박스" class="cell-input"><input type="number" id="miSmall" placeholder="소박스" class="cell-input"><input type="number" id="miLoose" placeholder="낱개" class="cell-input"><input type="text" id="miNote" placeholder="비고" class="cell-input wide"><button class="btn btn-blue btn-sm" id="miSave">+ 입고 등록</button></div>
+      <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>제품</th><th>공급업체</th><th class="num">대박스</th><th class="num">소박스</th><th class="num">낱개</th><th class="num">합계(개)</th><th>비고</th></tr></thead><tbody>${manRows||'<tr><td colspan="8" class="empty">수동 입고 기록 없음</td></tr>'}</tbody></table></div></div>`;
+}
+
+/* 11. 출고 관리 */
+function amtOutbounds(){ return invLogs.filter(i=>(i.company||'AMT')==='KY' && i.type==='out' && String(i.memo||'').startsWith('발주출고')).map(i=>({...i,_ts:(i.date||'')+(i.createdAt||''),vendor:String(i.memo||'').replace(/^발주출고-/,'').replace(/\s*\(.*\)$/,'')})).sort((a,b)=>b._ts.localeCompare(a._ts)); }
+function defaultFee(){ return toNum(audit.config&&audit.config.shipFee)||4500; }
+function viewOutbound(){
+  const outs=amtOutbounds();
+  const autoRows=outs.map(i=>{ const meta=audit.outMeta[i.id]||{}; const fee=meta.fee!=null?meta.fee:'';
+    return `<tr><td>${escHtml(i.date)}</td><td>${escHtml(i.vendor)}</td><td>${escHtml(prodNameByAmt(i.product))} <span class="badge b-amt">AMT</span></td>
+      <td class="num"><input class="cell-input" data-outmeta="${escHtml(i.id)}" data-f="big" value="${meta.big!=null?escHtml(meta.big):''}" placeholder="0"></td>
+      <td class="num"><input class="cell-input" data-outmeta="${escHtml(i.id)}" data-f="small" value="${meta.small!=null?escHtml(meta.small):''}" placeholder="0"></td>
+      <td class="num"><input class="cell-input" data-outmeta="${escHtml(i.id)}" data-f="loose" value="${meta.loose!=null?escHtml(meta.loose):''}" placeholder="0"></td>
+      <td class="num"><b class="mono" style="color:var(--red)">−${fmt(Math.abs(i.qty))}</b></td>
+      <td class="num"><input class="cell-input" data-outmeta="${escHtml(i.id)}" data-f="fee" value="${fee}" placeholder="${defaultFee()}"></td>
+      <td><input class="cell-input wide" data-outmeta="${escHtml(i.id)}" data-f="note" value="${escHtml(meta.note||'')}"></td></tr>`;
+  }).join('');
+  const manualOut=toArr(audit.manualMoves).filter(m=>m.dir==='out').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const manRows=manualOut.map(m=>{ const p=audit.products[m.prodKey]||{};
+    return `<tr><td>${escHtml(m.date)}</td><td>${escHtml(m.vendor||'')}</td><td>${escHtml(p.name||m.prodKey)} <span class="badge b-gray">수동</span></td>
+      <td class="num">${m.big!=null?fmt(m.big):'–'}</td><td class="num">${m.small!=null?fmt(m.small):'–'}</td><td class="num">${m.loose!=null?fmt(m.loose):'–'}</td>
+      <td class="num"><b class="mono" style="color:var(--red)">−${fmt(m.qty)}</b></td><td class="num">${m.fee!=null?'₩'+fmt(m.fee):'–'}</td><td>${escHtml(m.note||'')} <button class="btn btn-ghost btn-sm" data-delmove="${escHtml(m.id)}">삭제</button></td></tr>`;
+  }).join('');
+  const manualOpts=prodList().filter(p=>!p.amtKey).map(p=>`<option value="${p.key}">${escHtml(p.name)}</option>`).join('');
+  return `<h1 class="page-title">⬆️ 출고 관리</h1><p class="page-sub">AMT 발주출고는 합계수량이 자동으로 들어옵니다. 대박스/소박스/낱개·택배비만 직접 입력하세요.</p>
+    <div class="card"><h3 style="margin:0 0 4px;font-size:.95rem">AMT 발주출고 (자동) · ${outs.length}건</h3><p class="page-sub" style="margin-bottom:10px">기본 택배비 ₩${fmt(defaultFee())} (칸 비우면 자동 적용 · 다르면 직접 입력)</p>
+      <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>거래처</th><th>제품</th><th class="num">대박스</th><th class="num">소박스</th><th class="num">낱개</th><th class="num">합계(개)</th><th class="num">택배비</th><th>비고</th></tr></thead><tbody>${autoRows||'<tr><td colspan="9" class="empty">AMT 발주출고 기록이 없습니다</td></tr>'}</tbody></table></div></div>
+    <div class="card"><h3 style="margin:0 0 10px;font-size:.95rem">수동 제품 출고 등록 (TBAND S · BBAND)</h3>
+      <div class="row-flex" style="margin-bottom:12px"><input type="date" id="moDate" value="${todayStr()}" class="cell-input wide" style="width:150px"><select id="moProd" class="cell-input wide" style="width:160px">${manualOpts}</select><input type="text" id="moVendor" placeholder="거래처" class="cell-input wide"><input type="number" id="moQty" placeholder="합계수량" class="cell-input" style="width:100px"><input type="number" id="moBig" placeholder="대박스" class="cell-input"><input type="number" id="moSmall" placeholder="소박스" class="cell-input"><input type="number" id="moLoose" placeholder="낱개" class="cell-input"><input type="number" id="moFee" placeholder="택배비" class="cell-input" value="${defaultFee()}"><input type="text" id="moNote" placeholder="비고" class="cell-input wide"><button class="btn btn-blue btn-sm" id="moSave">+ 출고 등록</button></div>
+      <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>거래처</th><th>제품</th><th class="num">대박스</th><th class="num">소박스</th><th class="num">낱개</th><th class="num">합계(개)</th><th class="num">택배비</th><th>비고</th></tr></thead><tbody>${manRows||'<tr><td colspan="9" class="empty">수동 출고 기록 없음</td></tr>'}</tbody></table></div></div>`;
+}
+
+/* 12. 택배비 관리 */
+function allFeeRows(){
+  const rows=[];
+  amtOutbounds().forEach(i=>{ const meta=audit.outMeta[i.id]||{}; const fee=meta.fee!=null?toNum(meta.fee):defaultFee(); if(fee>0) rows.push({date:i.date,vendor:i.vendor,prod:prodNameByAmt(i.product),qty:Math.abs(i.qty),fee}); });
+  toArr(audit.manualMoves).filter(m=>m.dir==='out' && toNum(m.fee)>0).forEach(m=>{ const p=audit.products[m.prodKey]||{}; rows.push({date:m.date,vendor:m.vendor||'',prod:p.name||m.prodKey,qty:toNum(m.qty),fee:toNum(m.fee)}); });
+  return rows.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+}
+function viewFee(){
+  const rows=allFeeRows(); const byMonth={};
+  rows.forEach(r=>{ const m=(r.date||'').slice(0,7); (byMonth[m]=byMonth[m]||{cnt:0,sum:0}); byMonth[m].cnt++; byMonth[m].sum+=r.fee; });
+  const months=Object.keys(byMonth).sort().reverse(); const total=rows.reduce((s,r)=>s+r.fee,0); const curMonth=todayStr().slice(0,7);
+  const monthCards=months.slice(0,6).map(m=>{ const d=byMonth[m]; return `<div class="box-chip" style="padding:12px 16px;border-radius:12px;${m===curMonth?'border-color:var(--blue);background:var(--blue-bg)':''}"><div style="font-size:.78rem;color:var(--sub)">${m}${m===curMonth?' (이번달)':''}</div><div style="font-size:1.25rem;font-weight:800" class="mono">₩${fmt(d.sum)}</div><div style="font-size:.72rem;color:var(--sub)">출고 ${d.cnt}건 · 익월 초 정산</div></div>`; }).join('');
+  const detail=rows.slice(0,80).map(r=>`<tr><td>${escHtml(r.date)}</td><td>${escHtml(r.vendor)}</td><td>${escHtml(r.prod)}</td><td class="num mono">${fmt(r.qty)}</td><td class="num mono" style="color:var(--blue)">₩${fmt(r.fee)}</td></tr>`).join('');
+  return `<h1 class="page-title">🚚 택배비 관리</h1><p class="page-sub">출고 기록 기반 · 익월 초 정산 기준 · 총 누계 <b>₩${fmt(total)}</b></p>
+    <div class="card"><div class="row-flex" style="gap:12px">${monthCards||'<span class="empty">기록 없음</span>'}</div></div>
+    <div class="card"><h3 style="margin:0 0 10px;font-size:.95rem">상세 내역 (최근 80건)</h3><div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>거래처</th><th>제품</th><th class="num">출고수량(개)</th><th class="num">택배비</th></tr></thead><tbody>${detail||'<tr><td colspan="5" class="empty">택배비 기록 없음</td></tr>'}</tbody></table></div></div>`;
+}
+
+/* 13. 제품 관리 (관리자 모두 수정 가능) */
+function viewProducts(){
+  const rows=prodList().map(p=>{ const stock=currentStock(p);
+    return `<tr><td><b>${escHtml(p.name)}</b></td><td>${p.amtKey?`<span class="badge b-amt">${escHtml(p.amtKey)} 연동</span>`:'<span class="badge b-gray">수동</span>'}</td>
+      <td class="num"><input class="cell-input" data-pset="${p.key}" data-f="big" value="${escHtml(p.big)}"></td>
+      <td class="num"><input class="cell-input" data-pset="${p.key}" data-f="small" value="${escHtml(p.small)}"></td>
+      <td class="num"><input class="cell-input" data-pset="${p.key}" data-f="loose" value="${escHtml(p.loose)}"></td>
+      <td class="num">${p.amtKey?`<span class="mono">${stock==null?'–':fmt(stock)}</span>`:`<input class="cell-input" data-pset="${p.key}" data-f="openStock" value="${p.openStock!=null?escHtml(p.openStock):''}" placeholder="빈칸">`}</td>
+      <td style="text-align:center"><input type="checkbox" data-preorder="${p.key}" ${p.reorder?'checked':''}></td></tr>`;
+  }).join('');
+  return `<h1 class="page-title">📦 제품 관리</h1><p class="page-sub">박스 단위·기초재고·수입필요 표시 여부를 설정합니다. (입력 즉시 저장 · 관리자 모두 수정 가능)</p>
+    <div class="info-banner"><b>대박스/소박스/낱개</b> = 박스 1개에 들어가는 수량(개).<br><b>기초재고</b> = 수동 제품 시작 재고(입고/출고 등록 시 자동 가감).<br><b>수입필요</b> 체크 시 4/3개월 판매기준 알림 표시. (보관용 제품은 꺼두세요.)</div>
+    <div class="card tbl-wrap"><table><thead><tr><th>제품명</th><th>연동</th><th class="num">대박스(개)</th><th class="num">소박스(개)</th><th class="num">낱개</th><th class="num">기초/현재고</th><th style="text-align:center">수입필요</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+/* 14. 설정 (관리자 관리 = 총괄만) */
+function viewSettings(){
+  const admins=Object.keys(adminsList).map(k=>({_key:k,...adminsList[k]})).sort((a,b)=>(a.role==='super'?-1:1));
+  const adminRows=admins.map(a=>`<tr><td><b>${escHtml(a.name||a.email)}</b></td><td>${escHtml(a.email)}</td>
+    <td>${a.role==='super'?'<span class="badge b-amt">총괄관리자</span>':'<span class="badge b-gray">일반관리자</span>'}</td>
+    <td style="text-align:right">${(isSuper()&&a.role!=='super')?`<button class="btn btn-red btn-sm" data-deladmin="${escHtml(a._key)}">삭제</button>`:'<span style="color:#cbd5e1">—</span>'}</td></tr>`).join('');
+  const adminCard = `<div class="card"><div class="row-flex" style="justify-content:space-between;margin-bottom:10px"><h3 style="margin:0;font-size:.95rem">👥 관리자 관리 ${isSuper()?'':'<span class="badge b-gray" style="margin-left:6px">총괄만 수정</span>'}</h3>${isSuper()?'<button class="btn btn-blue btn-sm" id="addAdminBtn">+ 일반관리자 등록</button>':''}</div>
+    <div class="tbl-wrap"><table style="min-width:420px"><thead><tr><th>이름</th><th>이메일</th><th>권한</th><th style="text-align:right">관리</th></tr></thead><tbody>${adminRows||'<tr><td colspan="4" class="empty">등록된 관리자 없음</td></tr>'}</tbody></table></div>
+    ${isSuper()?'<div class="hint">일반관리자는 등록 후, 해당 직원이 본인 이메일+비밀번호로 첫 로그인하면 활성화됩니다. (비밀번호는 여기서 지정한 값)</div>':''}</div>`;
+  return `<h1 class="page-title">⚙️ 설정</h1><p class="page-sub">기본 택배비 · 관리자 · 연결 정보</p>
+    <div class="card"><h3 style="margin:0 0 10px;font-size:.95rem">기본 택배비</h3><div class="row-flex"><input type="number" id="setFee" class="cell-input" style="width:120px" value="${defaultFee()}"><span style="color:var(--sub);font-size:.85rem">원 (출고 등록 시 자동 적용)</span><button class="btn btn-blue btn-sm" id="setFeeSave">저장</button></div></div>
+    ${adminCard}
+    <div class="card"><h3 style="margin:0 0 8px;font-size:.95rem">연결 정보</h3><div style="font-size:.84rem;color:var(--sub);line-height:1.8">재고 데이터: <b>amt-ky</b> (주문시스템, 읽기 전용) ${amtReadOk?'<span class="badge b-green">연결됨</span>':'<span class="badge b-red">권한없음</span>'}<br>감사 데이터: <b>inventory-management-9a77b</b><br>로그인: <b>${escHtml(curEmail)}</b> (${escHtml(curName)})<br>재고이력 ${fmt(invLogs.length)}건 로드됨</div></div>`;
+}
+
+/* 15. 관리자 추가 모달 (총괄 전용) */
+function openAdminModal(){
+  const m=document.createElement('div'); m.className='modal-bg';
+  m.innerHTML='<div class="modal"><h3>일반관리자 등록</h3>'+
+    '<div class="field"><label>이름</label><input id="a_name" placeholder="예: 강승섭"></div>'+
+    '<div class="field"><label>이메일</label><input id="a_email" type="email" placeholder="예: jejusaram77@gmail.com"></div>'+
+    '<div class="field"><label>비밀번호</label><input id="a_code" placeholder="로그인 비밀번호 지정"></div>'+
+    '<div class="modal-foot"><button class="btn btn-ghost" id="a_cancel">취소</button><button class="btn btn-blue" id="a_save">등록</button></div></div>';
+  document.body.appendChild(m);
+  m.addEventListener('click',e=>{ if(e.target===m) m.remove(); });
+  m.querySelector('#a_cancel').addEventListener('click',()=>m.remove());
+  m.querySelector('#a_save').addEventListener('click',async()=>{
+    const name=(m.querySelector('#a_name').value||'').trim();
+    const email=(m.querySelector('#a_email').value||'').trim().toLowerCase();
+    const code=(m.querySelector('#a_code').value||'').trim();
+    if(!name||!email||!code){ toast('이름·이메일·비밀번호를 모두 입력하세요','error'); return; }
+    if(email===SUPER_EMAIL){ toast('총괄관리자는 이미 등록되어 있습니다','error'); return; }
+    const key=emailKey(email);
+    try{
+      await set(ref(newDb,'inv_admins/'+key), {email,name,code,role:'admin',updatedAt:Date.now()});
+      await set(ref(newDb,'admin_emails/'+key), true);
+      toast('✅ 등록되었습니다','ok'); m.remove();
+    }catch(e){ toast('등록 실패: '+e.message,'error'); }
+  });
+}
+
+/* 16. 이벤트 위임 */
+document.addEventListener('click', async (e)=>{
+  const t=e.target;
+  const navBtn=t.closest('nav button'); if(navBtn){ _curTab=navBtn.dataset.tab; render(); return; }
+  const tog=t.closest('[data-toggle]'); if(tog){ const b=document.getElementById('ab_'+tog.dataset.toggle); if(b) b.classList.toggle('open'); return; }
+  if(t.dataset.savaud){ const pk=t.dataset.savaud; const p=audit.products[pk]; const sys=currentStock({key:pk,...p}); const real=realTotal({key:pk,...p}); const rec=audit.audit[pk]||{loc:{}}; rec.savedAt=new Date().toISOString(); rec.savedQty=real; rec.sysAtSave=sys; audit.audit[pk]=rec; await saveAudit('audit/'+pk,rec); return; }
+  if(t.id==='miSave'){ await addManualMove('in'); return; }
+  if(t.id==='moSave'){ await addManualMove('out'); return; }
+  if(t.dataset.delmove){ if(!confirm('이 기록을 삭제할까요?')) return; const id=t.dataset.delmove; delete audit.manualMoves[id]; await saveAudit('manualMoves/'+id,null); return; }
+  if(t.id==='setFeeSave'){ audit.config.shipFee=toNum(document.getElementById('setFee').value)||4500; await saveAudit('config',audit.config); return; }
+  if(t.id==='addAdminBtn'){ openAdminModal(); return; }
+  if(t.dataset.deladmin){ if(!isSuper()){ toast('총괄관리자만 가능합니다','error'); return; } const key=t.dataset.deladmin; if(!confirm('이 관리자를 삭제할까요? (로그인 불가가 됩니다)')) return; try{ await set(ref(newDb,'inv_admins/'+key),null); await set(ref(newDb,'admin_emails/'+key),null); toast('삭제되었습니다','ok'); }catch(err){ toast('삭제 실패: '+err.message,'error'); } return; }
+  if(t.id==='logoutBtn'){ try{await signOut(newAuth);}catch(e){} try{await signOut(amtAuth);}catch(e){} location.reload(); return; }
+  if(t.id==='refreshBtn'){ render(); toast('새로고침','ok'); return; }
+});
+document.addEventListener('change', async (e)=>{
+  const t=e.target;
+  if(t.classList && t.classList.contains('aud')){ const {pk,loc,f}=t.dataset; audit.audit[pk]=audit.audit[pk]||{loc:{}}; audit.audit[pk].loc=audit.audit[pk].loc||{}; audit.audit[pk].loc[loc]=audit.audit[pk].loc[loc]||{}; audit.audit[pk].loc[loc][f]= t.value===''?null:toNum(t.value); await saveAudit('audit/'+pk,audit.audit[pk]); render(); return; }
+  if(t.dataset && t.dataset.outmeta){ const id=t.dataset.outmeta,f=t.dataset.f; audit.outMeta[id]=audit.outMeta[id]||{}; audit.outMeta[id][f]=(f==='note'||f==='supplier')?t.value:(t.value===''?null:toNum(t.value)); await saveAudit('outMeta/'+id,audit.outMeta[id]); if(f==='fee'||f==='big'||f==='small'||f==='loose') render(); return; }
+  if(t.dataset && t.dataset.inmeta){ const id=t.dataset.inmeta,f=t.dataset.f; audit.inMeta[id]=audit.inMeta[id]||{}; audit.inMeta[id][f]=(f==='note'||f==='supplier')?t.value:(t.value===''?null:toNum(t.value)); await saveAudit('inMeta/'+id,audit.inMeta[id]); return; }
+  if(t.dataset && t.dataset.pset){ const pk=t.dataset.pset,f=t.dataset.f; audit.products[pk]=audit.products[pk]||{}; audit.products[pk][f]=(f==='openStock' && t.value==='')?null:toNum(t.value); await saveAudit('products/'+pk,audit.products[pk]); render(); return; }
+  if(t.dataset && t.dataset.preorder){ const pk=t.dataset.preorder; audit.products[pk]=audit.products[pk]||{}; audit.products[pk].reorder=t.checked; await saveAudit('products/'+pk,audit.products[pk]); render(); return; }
+});
+async function addManualMove(dir){
+  const pre=dir==='in'?'mi':'mo';
+  const date=document.getElementById(pre+'Date').value;
+  const prodKey=document.getElementById(pre+'Prod').value;
+  const vendor=document.getElementById(pre+'Vendor').value.trim();
+  const qty=toNum(document.getElementById(pre+'Qty').value);
+  const big=document.getElementById(pre+'Big').value, small=document.getElementById(pre+'Small').value, loose=document.getElementById(pre+'Loose').value;
+  const note=document.getElementById(pre+'Note').value.trim();
+  const fee=dir==='out'?toNum(document.getElementById('moFee').value):null;
+  if(!date||!prodKey||qty<=0){ toast('날짜·제품·수량을 확인하세요','error'); return; }
+  const id='mv_'+Date.now();
+  const rec={ id,date,prodKey,dir,qty,vendor, big:big===''?null:toNum(big), small:small===''?null:toNum(small), loose:loose===''?null:toNum(loose), note, createdAt:new Date().toISOString() };
+  if(dir==='out') rec.fee=fee;
+  audit.manualMoves[id]=rec; await saveAudit('manualMoves/'+id,rec);
+  ['Vendor','Qty','Big','Small','Loose','Note'].forEach(s=>{ const el=document.getElementById(pre+s); if(el) el.value=''; });
+}
+
+/* 17. 시작 */
+document.getElementById('loginBtn').addEventListener('click', doLogin);
+document.getElementById('pw').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+document.getElementById('email').addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('pw').focus(); });
+</script>
+</body>
+</html>
