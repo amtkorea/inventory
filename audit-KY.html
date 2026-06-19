@@ -254,9 +254,12 @@ function manualStock(key){
   let s=open||0; moves.forEach(m=>{ s+=(m.dir==='in'?1:-1)*toNum(m.qty); }); return s;
 }
 function currentStock(p){ if(p.amtKey) return amtReadOk?amtCombined(p.amtKey):null; return manualStock(p.key); }
+/* KY 판매 출고 판별: 발주출고(AMT직접) + KY주문출고(KY앱 대리점주문) 둘 다 포함, 내부거래/반품 제외 */
+function isSaleOut(i){ const mm=String(i.memo||''); return (i.company||'AMT')==='KY' && i.type==='out' && (mm.indexOf('발주출고')>=0 || mm.indexOf('KY주문출고')>=0); }
+function outVendor(memo){ let s=String(memo||''); if(s.indexOf('KY주문출고')>=0){ s=s.replace(/^\[KY주문출고\]\s*/,'').replace(/\s*#.*$/,''); } else { s=s.replace(/^발주출고-/,'').replace(/\s*\(.*\)$/,''); } return s.trim(); }
 function salesLast(p, n){
   const since=monthsAgoStr(n);
-  if(p.amtKey){ return invLogs.filter(i=>i.product===p.amtKey && (i.company||'AMT')==='KY' && i.type==='out' && String(i.memo||'').startsWith('발주출고') && (i.date||'')>=since).reduce((s,i)=>s+Math.abs(Number(i.qty)||0),0); }
+  if(p.amtKey){ return invLogs.filter(i=>i.product===p.amtKey && isSaleOut(i) && (i.date||'')>=since).reduce((s,i)=>s+Math.abs(Number(i.qty)||0),0); }
   return toArr(audit.manualMoves).filter(m=>m.prodKey===p.key && m.dir==='out' && (m.date||'')>=since).reduce((s,m)=>s+Math.abs(toNum(m.qty)),0);
 }
 function reorderStatus(p, stock){
@@ -386,7 +389,8 @@ function viewInbound(){
   const manRows=manualIn.map(m=>{ const p=audit.products[m.prodKey]||{};
     return `<tr><td>${escHtml(m.date)}</td><td>${escHtml(p.name||m.prodKey)} <span class="badge b-gray">수동</span></td><td>${escHtml(m.vendor||'')}</td>
       <td class="num">${m.big!=null?fmt(m.big):'–'}</td><td class="num">${m.small!=null?fmt(m.small):'–'}</td><td class="num">${m.loose!=null?fmt(m.loose):'–'}</td>
-      <td class="num"><b class="mono" style="color:var(--green)">+${fmt(m.qty)}</b></td><td>${escHtml(m.note||'')} <button class="btn btn-ghost btn-sm" data-delmove="${escHtml(m.id)}">삭제</button></td></tr>`;
+      <td class="num"><b class="mono" style="color:var(--green)">+${fmt(m.qty)}</b></td><td>${escHtml(m.note||'')}</td>
+      <td style="text-align:right;white-space:nowrap"><button class="btn btn-ghost btn-sm" data-editmove="${escHtml(m.id)}">수정</button> <button class="btn btn-red btn-sm" data-delmove="${escHtml(m.id)}">삭제</button></td></tr>`;
   }).join('');
   const manualOpts=prodList().filter(p=>!p.amtKey).map(p=>`<option value="${p.key}">${escHtml(p.name)}</option>`).join('');
   return `<h1 class="page-title">⬇️ 입고 관리</h1><p class="page-sub">AMT 수입은 자동으로 목록에 뜹니다. 대박스/소박스/낱개·공급업체만 직접 입력하세요.</p>
@@ -394,11 +398,11 @@ function viewInbound(){
       <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>제품</th><th>공급업체</th><th class="num">대박스</th><th class="num">소박스</th><th class="num">낱개</th><th class="num">합계(개)</th><th>비고</th></tr></thead><tbody>${autoRows||'<tr><td colspan="8" class="empty">AMT 수입 기록이 없습니다</td></tr>'}</tbody></table></div></div>
     <div class="card"><h3 style="margin:0 0 10px;font-size:.95rem">수동 제품 입고 등록 (TBAND S · BBAND)</h3>
       <div class="row-flex" style="margin-bottom:12px"><input type="date" id="miDate" value="${todayStr()}" class="cell-input wide" style="width:150px"><select id="miProd" class="cell-input wide" style="width:160px">${manualOpts}</select><input type="text" id="miVendor" placeholder="공급업체" class="cell-input wide"><input type="number" id="miQty" placeholder="합계수량" class="cell-input" style="width:100px"><input type="number" id="miBig" placeholder="대박스" class="cell-input"><input type="number" id="miSmall" placeholder="소박스" class="cell-input"><input type="number" id="miLoose" placeholder="낱개" class="cell-input"><input type="text" id="miNote" placeholder="비고" class="cell-input wide"><button class="btn btn-blue btn-sm" id="miSave">+ 입고 등록</button></div>
-      <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>제품</th><th>공급업체</th><th class="num">대박스</th><th class="num">소박스</th><th class="num">낱개</th><th class="num">합계(개)</th><th>비고</th></tr></thead><tbody>${manRows||'<tr><td colspan="8" class="empty">수동 입고 기록 없음</td></tr>'}</tbody></table></div></div>`;
+      <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>제품</th><th>공급업체</th><th class="num">대박스</th><th class="num">소박스</th><th class="num">낱개</th><th class="num">합계(개)</th><th>비고</th><th style="text-align:right">관리</th></tr></thead><tbody>${manRows||'<tr><td colspan="9" class="empty">수동 입고 기록 없음</td></tr>'}</tbody></table></div></div>`;
 }
 
 /* 11. 출고 관리 */
-function amtOutbounds(){ return invLogs.filter(i=>(i.company||'AMT')==='KY' && i.type==='out' && String(i.memo||'').startsWith('발주출고')).map(i=>({...i,_ts:(i.date||'')+(i.createdAt||''),vendor:String(i.memo||'').replace(/^발주출고-/,'').replace(/\s*\(.*\)$/,'')})).sort((a,b)=>b._ts.localeCompare(a._ts)); }
+function amtOutbounds(){ return invLogs.filter(isSaleOut).map(i=>({...i,_ts:(i.date||'')+(i.createdAt||''),vendor:outVendor(i.memo)})).sort((a,b)=>b._ts.localeCompare(a._ts)); }
 function defaultFee(){ return toNum(audit.config&&audit.config.shipFee)||4500; }
 function viewOutbound(){
   const outs=amtOutbounds();
@@ -415,15 +419,16 @@ function viewOutbound(){
   const manRows=manualOut.map(m=>{ const p=audit.products[m.prodKey]||{};
     return `<tr><td>${escHtml(m.date)}</td><td>${escHtml(m.vendor||'')}</td><td>${escHtml(p.name||m.prodKey)} <span class="badge b-gray">수동</span></td>
       <td class="num">${m.big!=null?fmt(m.big):'–'}</td><td class="num">${m.small!=null?fmt(m.small):'–'}</td><td class="num">${m.loose!=null?fmt(m.loose):'–'}</td>
-      <td class="num"><b class="mono" style="color:var(--red)">−${fmt(m.qty)}</b></td><td class="num">${m.fee!=null?'₩'+fmt(m.fee):'–'}</td><td>${escHtml(m.note||'')} <button class="btn btn-ghost btn-sm" data-delmove="${escHtml(m.id)}">삭제</button></td></tr>`;
+      <td class="num"><b class="mono" style="color:var(--red)">−${fmt(m.qty)}</b></td><td class="num">${m.fee!=null?'₩'+fmt(m.fee):'–'}</td><td>${escHtml(m.note||'')}</td>
+      <td style="text-align:right;white-space:nowrap"><button class="btn btn-ghost btn-sm" data-editmove="${escHtml(m.id)}">수정</button> <button class="btn btn-red btn-sm" data-delmove="${escHtml(m.id)}">삭제</button></td></tr>`;
   }).join('');
   const manualOpts=prodList().filter(p=>!p.amtKey).map(p=>`<option value="${p.key}">${escHtml(p.name)}</option>`).join('');
   return `<h1 class="page-title">⬆️ 출고 관리</h1><p class="page-sub">AMT 발주출고는 합계수량이 자동으로 들어옵니다. 대박스/소박스/낱개·택배비만 직접 입력하세요.</p>
     <div class="card"><h3 style="margin:0 0 4px;font-size:.95rem">AMT 발주출고 (자동) · ${outs.length}건</h3><p class="page-sub" style="margin-bottom:10px">기본 택배비 ₩${fmt(defaultFee())} (칸 비우면 자동 적용 · 다르면 직접 입력)</p>
       <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>거래처</th><th>제품</th><th class="num">대박스</th><th class="num">소박스</th><th class="num">낱개</th><th class="num">합계(개)</th><th class="num">택배비</th><th>비고</th></tr></thead><tbody>${autoRows||'<tr><td colspan="9" class="empty">AMT 발주출고 기록이 없습니다</td></tr>'}</tbody></table></div></div>
-    <div class="card"><h3 style="margin:0 0 10px;font-size:.95rem">수동 제품 출고 등록 (TBAND S · BBAND)</h3>
+    <div class="card"><h3 style="margin:0 0 4px;font-size:.95rem">수동 제품 출고 등록 (TBAND S · BBAND 등 비AMT 제품)</h3><p class="page-sub" style="margin-bottom:10px">JUC·DELL·MEDIAS 외 제품의 출고를 직접 등록합니다. 등록 후 <b>수정·삭제</b> 가능합니다.</p>
       <div class="row-flex" style="margin-bottom:12px"><input type="date" id="moDate" value="${todayStr()}" class="cell-input wide" style="width:150px"><select id="moProd" class="cell-input wide" style="width:160px">${manualOpts}</select><input type="text" id="moVendor" placeholder="거래처" class="cell-input wide"><input type="number" id="moQty" placeholder="합계수량" class="cell-input" style="width:100px"><input type="number" id="moBig" placeholder="대박스" class="cell-input"><input type="number" id="moSmall" placeholder="소박스" class="cell-input"><input type="number" id="moLoose" placeholder="낱개" class="cell-input"><input type="number" id="moFee" placeholder="택배비" class="cell-input" value="${defaultFee()}"><input type="text" id="moNote" placeholder="비고" class="cell-input wide"><button class="btn btn-blue btn-sm" id="moSave">+ 출고 등록</button></div>
-      <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>거래처</th><th>제품</th><th class="num">대박스</th><th class="num">소박스</th><th class="num">낱개</th><th class="num">합계(개)</th><th class="num">택배비</th><th>비고</th></tr></thead><tbody>${manRows||'<tr><td colspan="9" class="empty">수동 출고 기록 없음</td></tr>'}</tbody></table></div></div>`;
+      <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>거래처</th><th>제품</th><th class="num">대박스</th><th class="num">소박스</th><th class="num">낱개</th><th class="num">합계(개)</th><th class="num">택배비</th><th>비고</th><th style="text-align:right">관리</th></tr></thead><tbody>${manRows||'<tr><td colspan="10" class="empty">수동 출고 기록 없음</td></tr>'}</tbody></table></div></div>`;
 }
 
 /* 12. 택배비 관리 */
@@ -539,6 +544,7 @@ document.addEventListener('click', async (e)=>{
   if(t.id==='miSave'){ await addManualMove('in'); return; }
   if(t.id==='moSave'){ await addManualMove('out'); return; }
   if(t.dataset.delmove){ if(!confirm('이 기록을 삭제할까요?')) return; const id=t.dataset.delmove; delete audit.manualMoves[id]; await saveAudit('manualMoves/'+id,null); return; }
+  if(t.dataset.editmove){ openEditMoveModal(t.dataset.editmove); return; }
   if(t.id==='setFeeSave'){ audit.config.shipFee=toNum(document.getElementById('setFee').value)||4500; await saveAudit('config',audit.config); return; }
   if(t.id==='addFeeBtn'){ openExtraFeeModal(); return; }
   if(t.dataset.delfee){ if(!confirm('이 택배비 기록을 삭제할까요?')) return; const id=t.dataset.delfee; try{ await set(ref(newDb,'audit_data/extraFees/'+id),null); toast('삭제되었습니다','ok'); }catch(err){ toast('삭제 실패: '+err.message,'error'); } return; }
@@ -555,6 +561,39 @@ document.addEventListener('change', async (e)=>{
   if(t.dataset && t.dataset.pset){ const pk=t.dataset.pset,f=t.dataset.f; audit.products[pk]=audit.products[pk]||{}; audit.products[pk][f]=(f==='openStock' && t.value==='')?null:toNum(t.value); await saveAudit('products/'+pk,audit.products[pk]); render(); return; }
   if(t.dataset && t.dataset.preorder){ const pk=t.dataset.preorder; audit.products[pk]=audit.products[pk]||{}; audit.products[pk].reorder=t.checked; await saveAudit('products/'+pk,audit.products[pk]); render(); return; }
 });
+function openEditMoveModal(id){
+  const m0=audit.manualMoves[id]; if(!m0){ toast('기록을 찾을 수 없습니다','error'); return; }
+  const isOut=m0.dir==='out';
+  const opts=prodList().filter(p=>!p.amtKey).map(p=>`<option value="${p.key}" ${p.key===m0.prodKey?'selected':''}>${escHtml(p.name)}</option>`).join('');
+  const m=document.createElement('div'); m.className='modal-bg';
+  m.innerHTML='<div class="modal"><h3>'+(isOut?'출고':'입고')+' 기록 수정</h3>'+
+    '<div class="field"><label>날짜 *</label><input id="e_date" type="date" value="'+escHtml(m0.date||todayStr())+'"></div>'+
+    '<div class="field"><label>제품 *</label><select id="e_prod">'+opts+'</select></div>'+
+    '<div class="field"><label>'+(isOut?'거래처':'공급업체')+'</label><input id="e_vendor" value="'+escHtml(m0.vendor||'')+'"></div>'+
+    '<div class="field"><label>합계수량 *</label><input id="e_qty" type="number" value="'+escHtml(m0.qty)+'"></div>'+
+    '<div class="row-flex"><div class="field" style="flex:1"><label>대박스</label><input id="e_big" type="number" value="'+(m0.big!=null?escHtml(m0.big):'')+'"></div>'+
+    '<div class="field" style="flex:1"><label>소박스</label><input id="e_small" type="number" value="'+(m0.small!=null?escHtml(m0.small):'')+'"></div>'+
+    '<div class="field" style="flex:1"><label>낱개</label><input id="e_loose" type="number" value="'+(m0.loose!=null?escHtml(m0.loose):'')+'"></div></div>'+
+    (isOut?'<div class="field"><label>택배비</label><input id="e_fee" type="number" value="'+(m0.fee!=null?escHtml(m0.fee):'')+'"></div>':'')+
+    '<div class="field"><label>비고</label><input id="e_note" value="'+escHtml(m0.note||'')+'"></div>'+
+    '<div class="modal-foot"><button class="btn btn-ghost" id="e_cancel">취소</button><button class="btn btn-blue" id="e_save">저장</button></div></div>';
+  document.body.appendChild(m);
+  m.addEventListener('click',e=>{ if(e.target===m) m.remove(); });
+  m.querySelector('#e_cancel').addEventListener('click',()=>m.remove());
+  m.querySelector('#e_save').addEventListener('click',async()=>{
+    const date=m.querySelector('#e_date').value;
+    const prodKey=m.querySelector('#e_prod').value;
+    const qty=toNum(m.querySelector('#e_qty').value);
+    if(!date||!prodKey||qty<=0){ toast('날짜·제품·수량을 확인하세요','error'); return; }
+    const big=m.querySelector('#e_big').value, small=m.querySelector('#e_small').value, loose=m.querySelector('#e_loose').value;
+    const rec={ id, date, prodKey, dir:m0.dir, qty, vendor:(m.querySelector('#e_vendor').value||'').trim(),
+      big:big===''?null:toNum(big), small:small===''?null:toNum(small), loose:loose===''?null:toNum(loose),
+      note:(m.querySelector('#e_note').value||'').trim(), createdAt:m0.createdAt||new Date().toISOString(), updatedAt:new Date().toISOString() };
+    if(isOut){ const f=m.querySelector('#e_fee').value; rec.fee=f===''?null:toNum(f); }
+    try{ await set(ref(newDb,'audit_data/manualMoves/'+id), rec); toast('✅ 수정되었습니다','ok'); m.remove(); }
+    catch(e){ toast('수정 실패: '+e.message,'error'); }
+  });
+}
 async function addManualMove(dir){
   const pre=dir==='in'?'mi':'mo';
   const date=document.getElementById(pre+'Date').value;
