@@ -132,7 +132,7 @@
 <script type="module">
 import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getDatabase, ref, get, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 /* ============================================================
    1. Firebase 두 개 연결
@@ -194,7 +194,7 @@ async function doLogin(){
   const pw=(document.getElementById('pw').value||'').trim();
   const msg=document.getElementById('loginMsg'), btn=document.getElementById('loginBtn');
   if(!email||!pw){ msg.style.color='#dc2626'; msg.textContent='이메일과 비밀번호를 입력하세요'; return; }
-  btn.disabled=true; msg.style.color='#64748b'; msg.textContent='🔐 로그인 중...';
+  _loggingIn=true; btn.disabled=true; msg.style.color='#64748b'; msg.textContent='🔐 로그인 중...';
   try{
     await ensureAuthNew(email);
     const key=emailKey(email);
@@ -212,8 +212,8 @@ async function doLogin(){
     // amt-ky 읽기 로그인 (주문시스템 관리자가 아니면 실패 → 수동데이터만 표시)
     try{ await ensureAuthAmt(email); amtReadOk=true; }catch(e){ amtReadOk=false; }
     msg.style.color='#16a34a'; msg.textContent='✅ 로그인 성공';
-    enterApp();
-  }catch(e){ msg.style.color='#dc2626'; msg.textContent='❌ '+(e.message||'로그인 실패'); btn.disabled=false; }
+    _loggingIn=false; enterApp();
+  }catch(e){ _loggingIn=false; msg.style.color='#dc2626'; msg.textContent='❌ '+(e.message||'로그인 실패'); btn.disabled=false; }
 }
 
 /* ============================================================
@@ -222,7 +222,7 @@ async function doLogin(){
 let invLogs=[], orders=[], dealers=[];
 let audit={ products:{}, audit:{}, outMeta:{}, inMeta:{}, manualMoves:{}, extraFees:{}, config:{ shipFee:4500 } };
 let adminsList={};
-let _curTab='dash', _amtLoaded=false, _auditLoaded=false;
+let _curTab='dash', _amtLoaded=false, _auditLoaded=false, _loggingIn=false, _inApp=false;
 function defaultProducts(){
   return {
     juc:    { name:'JUC',               amtKey:'JUC',    big:320,  small:80,  loose:1, reorder:true,  ord:1 },
@@ -282,6 +282,8 @@ function breakdown(total, p){
    6. 데이터 로드 (실시간 구독)
    ============================================================ */
 function enterApp(){
+  if(_inApp) return;
+  _inApp=true;
   document.getElementById('loginView').classList.add('hidden');
   document.getElementById('appView').classList.remove('hidden');
   document.getElementById('roleChip').textContent=curName;
@@ -615,6 +617,40 @@ async function addManualMove(dir){
 document.getElementById('loginBtn').addEventListener('click', doLogin);
 document.getElementById('pw').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
 document.getElementById('email').addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('pw').focus(); });
+
+/* 로그인 화면 표시 (자동로그인 실패/로그아웃 시) */
+function showLoginView(){
+  const sp=document.getElementById('_splash'); if(sp) sp.remove();
+  document.getElementById('appView').classList.add('hidden');
+  document.getElementById('loginView').classList.remove('hidden');
+  const b=document.getElementById('loginBtn'); if(b) b.disabled=false;
+}
+
+/* 초기 로딩 스플래시 (세션 확인 중 로그인화면 깜빡임 방지) */
+(function initSplash(){
+  document.getElementById('loginView').classList.add('hidden');
+  const sp=document.createElement('div'); sp.id='_splash';
+  sp.style.cssText='position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:.9rem;background:#f1f5f9;z-index:50';
+  sp.textContent='⏳ 로그인 확인 중...';
+  document.body.appendChild(sp);
+})();
+
+/* 자동 로그인: 같은 기기에서 한 번 로그인하면 다음부터 세션 복원 (GMP/AMT앱과 동일) */
+onAuthStateChanged(newAuth, async (user)=>{
+  if(_loggingIn || _inApp) return;
+  if(user && user.email){
+    const email=user.email.toLowerCase();
+    try{
+      const rec=(await get(ref(newDb,'inv_admins/'+emailKey(email)))).val();
+      if(rec){
+        curEmail=email; curName=rec.name||email; curRole=rec.role||'admin';
+        try{ await ensureAuthAmt(email); amtReadOk=true; }catch(e){ amtReadOk=false; }
+        const sp=document.getElementById('_splash'); if(sp) sp.remove();
+        enterApp();
+      } else { await signOut(newAuth); showLoginView(); }
+    }catch(e){ showLoginView(); }
+  } else { showLoginView(); }
+});
 </script>
 </body>
 </html>
