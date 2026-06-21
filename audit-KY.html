@@ -222,7 +222,7 @@ async function doLogin(){
 let invLogs=[], orders=[], dealers=[];
 let audit={ products:{}, audit:{}, outMeta:{}, inMeta:{}, manualMoves:{}, extraFees:{}, config:{ shipFee:4500 } };
 let adminsList={};
-let _curTab='dash', _amtLoaded=false, _auditLoaded=false, _loggingIn=false, _inApp=false;
+let _curTab='dash', _amtLoaded=false, _auditLoaded=false, _loggingIn=false, _inApp=false, _openAudit=new Set();
 function defaultProducts(){
   return {
     juc:    { name:'JUC',               amtKey:'JUC',    big:320,  small:80,  loose:1, reorder:true,  ord:1 },
@@ -306,11 +306,21 @@ function setConn(ok){ document.getElementById('connDot').className='dot'+(ok?' o
 async function saveAudit(path, value){ try{ await set(ref(newDb,'audit_data/'+path), value); toast('✅ 저장 완료','ok'); }catch(e){ toast('저장 실패: '+e.message,'error'); } }
 
 /* 7. 네비/라우팅 */
-const TABS=[{k:'dash',t:'📊 대시보드'},{k:'audit',t:'📋 재고 감사'},{k:'in',t:'⬇️ 입고 관리'},{k:'out',t:'⬆️ 출고 관리'},{k:'fee',t:'🚚 택배비'},{k:'prod',t:'📦 제품 관리'},{k:'set',t:'⚙️ 설정'}];
+const TABS=[{k:'dash',t:'📊 대시보드'},{k:'audit',t:'📋 실사 재고'},{k:'in',t:'⬇️ 입고 관리'},{k:'out',t:'⬆️ 출고 관리'},{k:'fee',t:'🚚 택배비'},{k:'prod',t:'📦 제품 관리'},{k:'set',t:'⚙️ 설정'}];
 function buildNav(){ document.getElementById('nav').innerHTML=TABS.map(t=>`<button data-tab="${t.k}" class="${t.k===_curTab?'active':''}">${t.t}</button>`).join(''); }
 function render(){
   if(!_amtLoaded || !_auditLoaded){ document.getElementById('content').innerHTML='<div class="empty">⏳ 데이터 불러오는 중...</div>'; return; }
   buildNav();
+  // 입력 중이던 칸의 포커스/커서 위치 보존 (저장/실시간갱신 후에도 입력창 유지)
+  const a=document.activeElement; let fsel=null, caret=null;
+  if(a && a.tagName==='INPUT' && a.dataset){
+    if(a.classList.contains('aud')) fsel='.aud[data-pk="'+a.dataset.pk+'"][data-loc="'+a.dataset.loc+'"][data-f="'+a.dataset.f+'"]';
+    else if(a.dataset.outmeta!=null) fsel='[data-outmeta="'+a.dataset.outmeta+'"][data-f="'+a.dataset.f+'"]';
+    else if(a.dataset.inmeta!=null) fsel='[data-inmeta="'+a.dataset.inmeta+'"][data-f="'+a.dataset.f+'"]';
+    else if(a.dataset.pset!=null) fsel='[data-pset="'+a.dataset.pset+'"][data-f="'+a.dataset.f+'"]';
+    else if(a.dataset.auditdate!=null) fsel='[data-auditdate="'+a.dataset.auditdate+'"]';
+    if(fsel){ try{ caret=a.selectionStart; }catch(e){} }
+  }
   const c=document.getElementById('content');
   if(_curTab==='dash') c.innerHTML=viewDash();
   else if(_curTab==='audit') c.innerHTML=viewAudit();
@@ -319,6 +329,7 @@ function render(){
   else if(_curTab==='fee') c.innerHTML=viewFee();
   else if(_curTab==='prod') c.innerHTML=viewProducts();
   else if(_curTab==='set') c.innerHTML=viewSettings();
+  if(fsel){ const el=document.querySelector(fsel); if(el){ el.focus(); if(caret!=null){ try{ el.setSelectionRange(caret,caret); }catch(e){} } } }
 }
 function amtWarnBanner(){ return amtReadOk?'':'<div class="warn-banner">⚠️ 이 계정은 주문시스템(AMT) 재고 읽기 권한이 없어 <b>AMT 연동 제품(JUC·DELL·MEDIAS T) 재고가 표시되지 않습니다</b>. 수동 제품만 정상 표시됩니다. (주문시스템 관리자 계정으로 로그인하면 합산재고가 보입니다.)</div>'; }
 
@@ -333,8 +344,7 @@ function viewDash(){
     const remain=(stock!=null && monthly>0)?(stock/monthly).toFixed(1)+'개월':(stock!=null?'충분':'—');
     const tag=p.amtKey?`<span class="badge b-amt">AMT 연동 (자동)</span>`:`<span class="badge b-gray">수동 입력</span>`;
     const stockHtml = stock==null?`<div class="blank-stock">${p.amtKey?'— 권한없음 —':'— 직접 입력 —'}</div>`:`<div class="stock mono">${fmt(stock)} <small>개</small></div>`;
-    const boxHtml = bd?`<div class="box-line"><span class="box-chip">대박스 <b>${fmt(bd.big)}</b></span><span class="box-chip">소박스 <b>${fmt(bd.small)}</b></span><span class="box-chip">낱개 <b>${fmt(bd.loose)}</b></span></div>`:'';
-    return `<div class="prod-card"><div class="pc-top"><div><div class="pname">${escHtml(p.name)}</div><div class="ptag">${tag}</div></div><span class="badge ${st.cls}">${st.label}</span></div>${stockHtml}${boxHtml}<div class="pc-foot"><span>최근 4개월 판매 <b class="mono" style="color:var(--txt)">${fmt(s4)}</b>개</span><span>잔여 ${remain}</span></div></div>`;
+    return `<div class="prod-card"><div class="pc-top"><div><div class="pname">${escHtml(p.name)}</div><div class="ptag">${tag}</div></div><span class="badge ${st.cls}">${st.label}</span></div>${stockHtml}<div class="pc-foot"><span>최근 4개월 판매 <b class="mono" style="color:var(--txt)">${fmt(s4)}</b>개</span><span>잔여 ${remain}</span></div></div>`;
   }).join('');
   return `<h1 class="page-title">📊 대시보드</h1>
     <p class="page-sub">실제 5종 (BBAND은 KY재고/메디플스재고 분리 표시)${needCnt>0?` · <b style="color:var(--pink)">수입 점검 ${needCnt}건</b>`:''}</p>
@@ -343,34 +353,39 @@ function viewDash(){
     <div class="prod-grid">${cards}</div>`;
 }
 
-/* 9. 재고 감사 */
-const LOCS=['지하창고','2층','기타'];
+/* 9. 실사 재고 */
+const LOCS=['사무실','기타'];
 function locSum(p, loc){ const a=(audit.audit[p.key]&&audit.audit[p.key].loc&&audit.audit[p.key].loc[loc])||{}; return (toNum(a.big)*(toNum(p.big)||1))+(toNum(a.small)*(toNum(p.small)||0))+toNum(a.loose)+toNum(a.etc); }
 function realTotal(p){ return LOCS.reduce((s,loc)=>s+locSum(p,loc),0); }
 function viewAudit(){
   const items=prodList().map(p=>{
+    const rec=audit.audit[p.key]||{};
     const sys=currentStock(p); const real=realTotal(p);
-    const hasReal=LOCS.some(loc=>{ const a=(audit.audit[p.key]&&audit.audit[p.key].loc&&audit.audit[p.key].loc[loc])||{}; return a.big||a.small||a.loose||a.etc; });
+    const hasReal=LOCS.some(loc=>{ const a=(rec.loc&&rec.loc[loc])||{}; return a.big||a.small||a.loose||a.etc; });
     const diff=sys==null?null:(real-sys); const diffOk=diff===0;
     const sysTxt=sys==null?'<span style="color:#cbd5e1">미입력</span>':fmt(sys);
     const badge=sys==null?'<span class="badge b-gray">수동</span>':(!hasReal?'<span class="badge b-gray">실사 전</span>':(diffOk?'<span class="badge b-green">✓ 일치</span>':'<span class="badge b-red">차이 '+(diff>0?'+':'')+fmt(diff)+'</span>'));
     const locBoxes=LOCS.map(loc=>{
-      const a=(audit.audit[p.key]&&audit.audit[p.key].loc&&audit.audit[p.key].loc[loc])||{}; const ls=locSum(p,loc);
+      const a=(rec.loc&&rec.loc[loc])||{}; const ls=locSum(p,loc);
       return `<div class="loc-box"><h4>${loc} <span class="lb-sum mono">${fmt(ls)}개</span></h4><div class="loc-inputs">
         <div><label>대박스</label><input type="number" class="aud" data-pk="${p.key}" data-loc="${loc}" data-f="big" value="${a.big!=null?escHtml(a.big):''}" placeholder="0"></div>
         <div><label>소박스</label><input type="number" class="aud" data-pk="${p.key}" data-loc="${loc}" data-f="small" value="${a.small!=null?escHtml(a.small):''}" placeholder="0"></div>
         <div><label>낱개</label><input type="number" class="aud" data-pk="${p.key}" data-loc="${loc}" data-f="loose" value="${a.loose!=null?escHtml(a.loose):''}" placeholder="0"></div>
         <div><label>기타</label><input type="number" class="aud" data-pk="${p.key}" data-loc="${loc}" data-f="etc" value="${a.etc!=null?escHtml(a.etc):''}" placeholder="0"></div>
-      </div><div class="conv-note">대박스×${fmt(p.big)} + 소박스×${fmt(p.small)} + 낱개 + 기타</div></div>`;
+      </div><div style="margin-top:8px"><label style="font-size:.66rem;color:var(--sub);display:block;margin-bottom:3px">기타 메모</label><input type="text" class="aud" data-pk="${p.key}" data-loc="${loc}" data-f="memo" value="${escHtml(a.memo||'')}" placeholder="예: 파손 / 샘플 / 비고" style="width:100%;padding:7px 9px;border:1.5px solid var(--line);border-radius:7px"></div>
+      <div class="conv-note">대박스×${fmt(p.big)} + 소박스×${fmt(p.small)} + 낱개 + 기타</div></div>`;
     }).join('');
-    return `<div class="audit-prod"><div class="audit-head" data-toggle="${p.key}"><div class="ah-left"><b>${escHtml(p.name)}</b><span class="sys">시스템 <b class="mono">${sysTxt}</b> · 실사 <b class="mono">${fmt(real)}</b></span>${badge}</div><span style="color:#94a3b8">▾</span></div>
-      <div class="audit-body" id="ab_${p.key}"><div class="loc-grid">${locBoxes}</div>
-      <div class="diff-bar"><div><div style="font-size:.74rem;color:var(--sub)">재고 차이 (실사 − 시스템)</div><div class="dval mono" style="color:${sys==null?'#94a3b8':(diffOk?'var(--green)':'var(--red)')}">${sys==null?'—':(diff>0?'+':'')+fmt(diff)}</div></div>
-      <button class="btn btn-blue" data-savaud="${p.key}">💾 실사 저장</button></div></div></div>`;
+    return `<div class="audit-prod"><div class="audit-head" data-toggle="${p.key}"><div class="ah-left"><b>${escHtml(p.name)}</b><span class="sys">전산 재고 <b class="mono">${sysTxt}</b> · 실사 재고 <b class="mono">${fmt(real)}</b></span>${badge}</div><span style="color:#94a3b8">▾</span></div>
+      <div class="audit-body${_openAudit.has(p.key)?' open':''}" id="ab_${p.key}"><div class="loc-grid">${locBoxes}</div>
+      <div class="diff-bar"><div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
+        <div><div style="font-size:.74rem;color:var(--sub)">재고 차이 (실사 재고 − 전산 재고)</div><div class="dval mono" style="color:${sys==null?'#94a3b8':(diffOk?'var(--green)':'var(--red)')}">${sys==null?'—':(diff>0?'+':'')+fmt(diff)}</div></div>
+        <div><div style="font-size:.74rem;color:var(--sub)">최종 실사 날짜</div><input type="date" class="cell-input wide" style="width:160px" data-auditdate="${p.key}" value="${escHtml(rec.auditDate||'')}"></div>
+      </div>
+      <button class="btn btn-blue" data-savaud="${p.key}">💾 실사 재고 저장</button></div></div></div>`;
   }).join('');
-  return `<h1 class="page-title">📋 재고 감사</h1><p class="page-sub">위치별(지하창고·2층·기타) 대박스/소박스/낱개를 입력하면 실사 합계가 자동 계산됩니다.</p>
+  return `<h1 class="page-title">📋 실사 재고</h1><p class="page-sub">위치별(사무실·기타) 대박스/소박스/낱개를 입력하면 실사 재고 합계가 자동 계산됩니다.</p>
     ${amtWarnBanner()}
-    <div class="info-banner"><b>실사 재고 = 대박스×박스단위 + 소박스×박스단위 + 낱개 + 기타</b><br><b>차이 = 실사 − 시스템</b> · 0이면 ✓일치, 아니면 빨간색으로 표시됩니다.</div>${items}`;
+    <div class="info-banner"><b>실사 재고 = 대박스×박스단위 + 소박스×박스단위 + 낱개 + 기타</b><br><b>차이 = 실사 재고 − 전산 재고</b> · 0이면 ✓일치, 아니면 빨간색으로 표시됩니다.</div>${items}`;
 }
 
 /* 10. 입고 관리 */
@@ -380,7 +395,6 @@ function viewInbound(){
   const imports=amtImports();
   const autoRows=imports.map(i=>{ const meta=audit.inMeta[i.id]||{};
     return `<tr><td>${escHtml(i.date)}</td><td>${escHtml(prodNameByAmt(i.product))} <span class="badge b-amt">AMT</span></td>
-      <td><input class="cell-input wide" data-inmeta="${escHtml(i.id)}" data-f="supplier" value="${escHtml(meta.supplier||'')}" placeholder="공급업체"></td>
       <td class="num"><input class="cell-input" data-inmeta="${escHtml(i.id)}" data-f="big" value="${meta.big!=null?escHtml(meta.big):''}" placeholder="0"></td>
       <td class="num"><input class="cell-input" data-inmeta="${escHtml(i.id)}" data-f="small" value="${meta.small!=null?escHtml(meta.small):''}" placeholder="0"></td>
       <td class="num"><input class="cell-input" data-inmeta="${escHtml(i.id)}" data-f="loose" value="${meta.loose!=null?escHtml(meta.loose):''}" placeholder="0"></td>
@@ -395,9 +409,9 @@ function viewInbound(){
       <td style="text-align:right;white-space:nowrap"><button class="btn btn-ghost btn-sm" data-editmove="${escHtml(m.id)}">수정</button> <button class="btn btn-red btn-sm" data-delmove="${escHtml(m.id)}">삭제</button></td></tr>`;
   }).join('');
   const manualOpts=prodList().filter(p=>!p.amtKey).map(p=>`<option value="${p.key}">${escHtml(p.name)}</option>`).join('');
-  return `<h1 class="page-title">⬇️ 입고 관리</h1><p class="page-sub">AMT 수입은 자동으로 목록에 뜹니다. 대박스/소박스/낱개·공급업체만 직접 입력하세요.</p>
+  return `<h1 class="page-title">⬇️ 입고 관리</h1><p class="page-sub">AMT 수입은 자동으로 목록에 뜹니다. 대박스/소박스/낱개만 직접 입력하세요.</p>
     <div class="card"><h3 style="margin:0 0 4px;font-size:.95rem">AMT 수입 (자동) · ${imports.length}건</h3><p class="page-sub" style="margin-bottom:10px">합계 수량은 AMT앱 재고이력에서 자동 반영됩니다.</p>
-      <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>제품</th><th>공급업체</th><th class="num">대박스</th><th class="num">소박스</th><th class="num">낱개</th><th class="num">합계(개)</th><th>비고</th></tr></thead><tbody>${autoRows||'<tr><td colspan="8" class="empty">AMT 수입 기록이 없습니다</td></tr>'}</tbody></table></div></div>
+      <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>제품</th><th class="num">대박스</th><th class="num">소박스</th><th class="num">낱개</th><th class="num">합계(개)</th><th>비고</th></tr></thead><tbody>${autoRows||'<tr><td colspan="7" class="empty">AMT 수입 기록이 없습니다</td></tr>'}</tbody></table></div></div>
     <div class="card"><h3 style="margin:0 0 10px;font-size:.95rem">수동 제품 입고 등록 (TBAND S · BBAND)</h3>
       <div class="row-flex" style="margin-bottom:12px"><input type="date" id="miDate" value="${todayStr()}" class="cell-input wide" style="width:150px"><select id="miProd" class="cell-input wide" style="width:160px">${manualOpts}</select><input type="text" id="miVendor" placeholder="공급업체" class="cell-input wide"><input type="number" id="miQty" placeholder="합계수량" class="cell-input" style="width:100px"><input type="number" id="miBig" placeholder="대박스" class="cell-input"><input type="number" id="miSmall" placeholder="소박스" class="cell-input"><input type="number" id="miLoose" placeholder="낱개" class="cell-input"><input type="text" id="miNote" placeholder="비고" class="cell-input wide"><button class="btn btn-blue btn-sm" id="miSave">+ 입고 등록</button></div>
       <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>제품</th><th>공급업체</th><th class="num">대박스</th><th class="num">소박스</th><th class="num">낱개</th><th class="num">합계(개)</th><th>비고</th><th style="text-align:right">관리</th></tr></thead><tbody>${manRows||'<tr><td colspan="9" class="empty">수동 입고 기록 없음</td></tr>'}</tbody></table></div></div>`;
@@ -541,7 +555,7 @@ function openAdminModal(){
 document.addEventListener('click', async (e)=>{
   const t=e.target;
   const navBtn=t.closest('nav button'); if(navBtn){ _curTab=navBtn.dataset.tab; render(); return; }
-  const tog=t.closest('[data-toggle]'); if(tog){ const b=document.getElementById('ab_'+tog.dataset.toggle); if(b) b.classList.toggle('open'); return; }
+  const tog=t.closest('[data-toggle]'); if(tog){ const k=tog.dataset.toggle; if(_openAudit.has(k)) _openAudit.delete(k); else _openAudit.add(k); const b=document.getElementById('ab_'+k); if(b) b.classList.toggle('open'); return; }
   if(t.dataset.savaud){ const pk=t.dataset.savaud; const p=audit.products[pk]; const sys=currentStock({key:pk,...p}); const real=realTotal({key:pk,...p}); const rec=audit.audit[pk]||{loc:{}}; rec.savedAt=new Date().toISOString(); rec.savedQty=real; rec.sysAtSave=sys; audit.audit[pk]=rec; await saveAudit('audit/'+pk,rec); return; }
   if(t.id==='miSave'){ await addManualMove('in'); return; }
   if(t.id==='moSave'){ await addManualMove('out'); return; }
@@ -557,7 +571,8 @@ document.addEventListener('click', async (e)=>{
 });
 document.addEventListener('change', async (e)=>{
   const t=e.target;
-  if(t.classList && t.classList.contains('aud')){ const {pk,loc,f}=t.dataset; audit.audit[pk]=audit.audit[pk]||{loc:{}}; audit.audit[pk].loc=audit.audit[pk].loc||{}; audit.audit[pk].loc[loc]=audit.audit[pk].loc[loc]||{}; audit.audit[pk].loc[loc][f]= t.value===''?null:toNum(t.value); await saveAudit('audit/'+pk,audit.audit[pk]); render(); return; }
+  if(t.classList && t.classList.contains('aud')){ const {pk,loc,f}=t.dataset; audit.audit[pk]=audit.audit[pk]||{loc:{}}; audit.audit[pk].loc=audit.audit[pk].loc||{}; audit.audit[pk].loc[loc]=audit.audit[pk].loc[loc]||{}; audit.audit[pk].loc[loc][f]= (f==='memo')?t.value : (t.value===''?null:toNum(t.value)); await saveAudit('audit/'+pk,audit.audit[pk]); if(f!=='memo') render(); return; }
+  if(t.dataset && t.dataset.auditdate!=null){ const pk=t.dataset.auditdate; audit.audit[pk]=audit.audit[pk]||{loc:{}}; audit.audit[pk].auditDate=t.value||''; await saveAudit('audit/'+pk,audit.audit[pk]); return; }
   if(t.dataset && t.dataset.outmeta){ const id=t.dataset.outmeta,f=t.dataset.f; audit.outMeta[id]=audit.outMeta[id]||{}; audit.outMeta[id][f]=(f==='note'||f==='supplier')?t.value:(t.value===''?null:toNum(t.value)); await saveAudit('outMeta/'+id,audit.outMeta[id]); if(f==='fee'||f==='big'||f==='small'||f==='loose') render(); return; }
   if(t.dataset && t.dataset.inmeta){ const id=t.dataset.inmeta,f=t.dataset.f; audit.inMeta[id]=audit.inMeta[id]||{}; audit.inMeta[id][f]=(f==='note'||f==='supplier')?t.value:(t.value===''?null:toNum(t.value)); await saveAudit('inMeta/'+id,audit.inMeta[id]); return; }
   if(t.dataset && t.dataset.pset){ const pk=t.dataset.pset,f=t.dataset.f; audit.products[pk]=audit.products[pk]||{}; audit.products[pk][f]=(f==='openStock' && t.value==='')?null:toNum(t.value); await saveAudit('products/'+pk,audit.products[pk]); render(); return; }
