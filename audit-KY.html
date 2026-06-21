@@ -177,6 +177,33 @@ function toNum(v){ const n=parseFloat(String(v).replace(/,/g,'')); return isNaN(
 function toArr(v){ if(!v) return []; return Array.isArray(v)?v.filter(x=>x):Object.values(v).filter(x=>x); }
 function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function monthsAgoStr(n){ const d=new Date(); d.setMonth(d.getMonth()-n); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+/* 기간(달력) 필터: 입고/출고/택배비 화면 공용 */
+function _ymd(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function monthRange(){ const d=new Date(); const y=d.getFullYear(), mo=d.getMonth(); const last=new Date(y,mo+1,0).getDate(); return { from:y+'-'+String(mo+1).padStart(2,'0')+'-01', to:y+'-'+String(mo+1).padStart(2,'0')+'-'+String(last).padStart(2,'0') }; }
+function monthsBackRange(n){ const t=new Date(); const f=new Date(); f.setMonth(f.getMonth()-(n-1)); f.setDate(1); return { from:_ymd(f), to:_ymd(t) }; }
+let _flt={ in:monthRange(), out:monthRange(), fee:monthRange() };
+let _feeMonthsAll=false;
+function inRange(dateStr, section){ const f=_flt[section]; if(!f) return true; const ds=dateStr||''; if(f.from && ds<f.from) return false; if(f.to && ds>f.to) return false; return true; }
+function _limit(arr,sec){ return arr.filter(x=>inRange(x.date, sec)); }
+function dateBar(section){
+  const f=_flt[section]||{};
+  return `<div class="row-flex" style="gap:6px;margin-bottom:12px;align-items:center;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:8px 10px">
+    <span style="font-size:.78rem;color:var(--sub);font-weight:600">📅 기간</span>
+    <input type="date" class="cell-input wide" style="width:145px" data-flt="${section}" data-fk="from" value="${escHtml(f.from||'')}">
+    <span style="color:var(--sub)">~</span>
+    <input type="date" class="cell-input wide" style="width:145px" data-flt="${section}" data-fk="to" value="${escHtml(f.to||'')}">
+    <button class="btn btn-ghost btn-sm" data-fltpreset="${section}:month">이번달</button>
+    <button class="btn btn-ghost btn-sm" data-fltpreset="${section}:3m">최근3개월</button>
+    <button class="btn btn-ghost btn-sm" data-fltpreset="${section}:6m">최근6개월</button>
+    <button class="btn btn-ghost btn-sm" data-fltpreset="${section}:all">전체</button>
+  </div>`;
+}
+function applyPreset(section, preset){
+  if(preset==='month') _flt[section]=monthRange();
+  else if(preset==='3m') _flt[section]=monthsBackRange(3);
+  else if(preset==='6m') _flt[section]=monthsBackRange(6);
+  else if(preset==='all') _flt[section]={from:'',to:''};
+}
 function emailKey(email){ return String(email||'').trim().toLowerCase().replace(/\./g,','); }
 function dummyPwAmt(email){ return 'amtky2026_'+(email||'').toLowerCase().replace(/[^a-z0-9]/g,'_')+'_x'; }
 function dummyPwNew(email){ return 'invaudit2026_'+(email||'').toLowerCase().replace(/[^a-z0-9]/g,'_')+'_x'; }
@@ -222,7 +249,7 @@ async function doLogin(){
 let invLogs=[], orders=[], dealers=[];
 let audit={ products:{}, audit:{}, outMeta:{}, inMeta:{}, manualMoves:{}, extraFees:{}, config:{ shipFee:4500 } };
 let adminsList={};
-let _curTab='dash', _amtLoaded=false, _auditLoaded=false, _loggingIn=false, _inApp=false, _openAudit=new Set();
+let _curTab='dash', _amtLoaded=false, _auditLoaded=false, _loggingIn=false, _inApp=false, _openAudit=new Set(), _backupChecked=false;
 function defaultProducts(){
   return {
     juc:    { name:'JUC',               amtKey:'JUC',    big:320,  small:80,  loose:1, reorder:true,  ord:1 },
@@ -299,6 +326,7 @@ function subscribe(){
     if(!d || !d.products){ audit={ products:defaultProducts(), audit:{}, outMeta:{}, inMeta:{}, manualMoves:{}, extraFees:{}, config:{shipFee:4500} }; try{ await set(ref(newDb,'audit_data'), audit); }catch(e){} }
     else { audit={ products:d.products||defaultProducts(), audit:d.audit||{}, outMeta:d.outMeta||{}, inMeta:d.inMeta||{}, manualMoves:d.manualMoves||{}, extraFees:d.extraFees||{}, config:d.config||{shipFee:4500} }; }
     _auditLoaded=true; render();
+    if(!_backupChecked){ _backupChecked=true; dailyAutoBackup(); }
   }, err=>{ toast('감사DB 읽기 실패: '+err.message,'error'); });
   onValue(ref(newDb,'inv_admins'), snap=>{ adminsList=snap.val()||{}; if(_curTab==='set') render(); });
 }
@@ -392,7 +420,7 @@ function viewAudit(){
 function amtImports(){ return invLogs.filter(i=>(i.company||'AMT')==='AMT' && i.type==='adjust' && (Number(i.qty)||0)>0).map(i=>({...i,_ts:(i.date||'')+(i.createdAt||'')})).sort((a,b)=>b._ts.localeCompare(a._ts)); }
 function prodNameByAmt(amtKey){ const f=prodList().find(p=>p.amtKey===amtKey); return f?f.name:amtKey; }
 function viewInbound(){
-  const imports=amtImports();
+  const imports=_limit(amtImports(),'in');
   const autoRows=imports.map(i=>{ const meta=audit.inMeta[i.id]||{};
     return `<tr><td>${escHtml(i.date)}</td><td>${escHtml(prodNameByAmt(i.product))} <span class="badge b-amt">AMT</span></td>
       <td class="num"><input class="cell-input" data-inmeta="${escHtml(i.id)}" data-f="big" value="${meta.big!=null?escHtml(meta.big):''}" placeholder="0"></td>
@@ -401,27 +429,28 @@ function viewInbound(){
       <td class="num"><b class="mono" style="color:var(--green)">+${fmt(i.qty)}</b></td>
       <td><input class="cell-input wide" data-inmeta="${escHtml(i.id)}" data-f="note" value="${escHtml(meta.note||i.memo||'')}"></td></tr>`;
   }).join('');
-  const manualIn=toArr(audit.manualMoves).filter(m=>m.dir==='in').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const manualIn=_limit(toArr(audit.manualMoves).filter(m=>m.dir==='in'),'in').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const manRows=manualIn.map(m=>{ const p=audit.products[m.prodKey]||{};
-    return `<tr><td>${escHtml(m.date)}</td><td>${escHtml(p.name||m.prodKey)} <span class="badge b-gray">수동</span></td><td>${escHtml(m.vendor||'')}</td>
+    return `<tr><td>${escHtml(m.date)}</td><td>${escHtml(p.name||m.prodKey)} <span class="badge b-gray">수동</span></td>
       <td class="num">${m.big!=null?fmt(m.big):'–'}</td><td class="num">${m.small!=null?fmt(m.small):'–'}</td><td class="num">${m.loose!=null?fmt(m.loose):'–'}</td>
       <td class="num"><b class="mono" style="color:var(--green)">+${fmt(m.qty)}</b></td><td>${escHtml(m.note||'')}</td>
       <td style="text-align:right;white-space:nowrap"><button class="btn btn-ghost btn-sm" data-editmove="${escHtml(m.id)}">수정</button> <button class="btn btn-red btn-sm" data-delmove="${escHtml(m.id)}">삭제</button></td></tr>`;
   }).join('');
   const manualOpts=prodList().filter(p=>!p.amtKey).map(p=>`<option value="${p.key}">${escHtml(p.name)}</option>`).join('');
   return `<h1 class="page-title">⬇️ 입고 관리</h1><p class="page-sub">AMT 수입은 자동으로 목록에 뜹니다. 대박스/소박스/낱개만 직접 입력하세요.</p>
-    <div class="card"><h3 style="margin:0 0 4px;font-size:.95rem">AMT 수입 (자동) · ${imports.length}건</h3><p class="page-sub" style="margin-bottom:10px">합계 수량은 AMT앱 재고이력에서 자동 반영됩니다.</p>
-      <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>제품</th><th class="num">대박스</th><th class="num">소박스</th><th class="num">낱개</th><th class="num">합계(개)</th><th>비고</th></tr></thead><tbody>${autoRows||'<tr><td colspan="7" class="empty">AMT 수입 기록이 없습니다</td></tr>'}</tbody></table></div></div>
-    <div class="card"><h3 style="margin:0 0 10px;font-size:.95rem">수동 제품 입고 등록 (TBAND S · BBAND)</h3>
-      <div class="row-flex" style="margin-bottom:12px"><input type="date" id="miDate" value="${todayStr()}" class="cell-input wide" style="width:150px"><select id="miProd" class="cell-input wide" style="width:160px">${manualOpts}</select><input type="text" id="miVendor" placeholder="공급업체" class="cell-input wide"><input type="number" id="miQty" placeholder="합계수량" class="cell-input" style="width:100px"><input type="number" id="miBig" placeholder="대박스" class="cell-input"><input type="number" id="miSmall" placeholder="소박스" class="cell-input"><input type="number" id="miLoose" placeholder="낱개" class="cell-input"><input type="text" id="miNote" placeholder="비고" class="cell-input wide"><button class="btn btn-blue btn-sm" id="miSave">+ 입고 등록</button></div>
-      <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>제품</th><th>공급업체</th><th class="num">대박스</th><th class="num">소박스</th><th class="num">낱개</th><th class="num">합계(개)</th><th>비고</th><th style="text-align:right">관리</th></tr></thead><tbody>${manRows||'<tr><td colspan="9" class="empty">수동 입고 기록 없음</td></tr>'}</tbody></table></div></div>`;
+    ${dateBar('in')}
+    <div class="card"><h3 style="margin:0 0 4px;font-size:.95rem">AMT 수입 (자동) · ${imports.length}건</h3><p class="page-sub" style="margin-bottom:10px">합계 수량은 AMT앱 재고이력에서 자동 반영됩니다. (위 기간 기준)</p>
+      <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>제품</th><th class="num">대박스</th><th class="num">소박스</th><th class="num">낱개</th><th class="num">합계(개)</th><th>비고</th></tr></thead><tbody>${autoRows||'<tr><td colspan="7" class="empty">이 기간에 AMT 수입 기록이 없습니다</td></tr>'}</tbody></table></div></div>
+    <div class="card"><h3 style="margin:0 0 10px;font-size:.95rem">수동 제품 입고 등록 (TBAND S · BBAND 등 비AMT 제품)</h3>
+      <div class="row-flex" style="margin-bottom:12px"><input type="date" id="miDate" value="${todayStr()}" class="cell-input wide" style="width:150px"><select id="miProd" class="cell-input wide" style="width:160px">${manualOpts}</select><input type="number" id="miQty" placeholder="합계수량" class="cell-input" style="width:100px"><input type="number" id="miBig" placeholder="대박스" class="cell-input"><input type="number" id="miSmall" placeholder="소박스" class="cell-input"><input type="number" id="miLoose" placeholder="낱개" class="cell-input"><input type="text" id="miNote" placeholder="비고" class="cell-input wide"><button class="btn btn-blue btn-sm" id="miSave">+ 입고 등록</button></div>
+      <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>제품</th><th class="num">대박스</th><th class="num">소박스</th><th class="num">낱개</th><th class="num">합계(개)</th><th>비고</th><th style="text-align:right">관리</th></tr></thead><tbody>${manRows||'<tr><td colspan="8" class="empty">이 기간에 수동 입고 기록 없음</td></tr>'}</tbody></table></div></div>`;
 }
 
 /* 11. 출고 관리 */
 function amtOutbounds(){ return invLogs.filter(isSaleOut).map(i=>({...i,_ts:(i.date||'')+(i.createdAt||''),vendor:outVendor(i.memo)})).sort((a,b)=>b._ts.localeCompare(a._ts)); }
 function defaultFee(){ return toNum(audit.config&&audit.config.shipFee)||4500; }
 function viewOutbound(){
-  const outs=amtOutbounds();
+  const outs=_limit(amtOutbounds(),'out');
   const autoRows=outs.map(i=>{ const meta=audit.outMeta[i.id]||{}; const fee=meta.fee!=null?meta.fee:'';
     return `<tr><td>${escHtml(i.date)}</td><td>${escHtml(i.vendor)}</td><td>${escHtml(prodNameByAmt(i.product))} <span class="badge b-amt">AMT</span></td>
       <td class="num"><input class="cell-input" data-outmeta="${escHtml(i.id)}" data-f="big" value="${meta.big!=null?escHtml(meta.big):''}" placeholder="0"></td>
@@ -431,7 +460,7 @@ function viewOutbound(){
       <td class="num"><input class="cell-input" data-outmeta="${escHtml(i.id)}" data-f="fee" value="${fee}" placeholder="${defaultFee()}"></td>
       <td><input class="cell-input wide" data-outmeta="${escHtml(i.id)}" data-f="note" value="${escHtml(meta.note||'')}"></td></tr>`;
   }).join('');
-  const manualOut=toArr(audit.manualMoves).filter(m=>m.dir==='out').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const manualOut=_limit(toArr(audit.manualMoves).filter(m=>m.dir==='out'),'out').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const manRows=manualOut.map(m=>{ const p=audit.products[m.prodKey]||{};
     return `<tr><td>${escHtml(m.date)}</td><td>${escHtml(m.vendor||'')}</td><td>${escHtml(p.name||m.prodKey)} <span class="badge b-gray">수동</span></td>
       <td class="num">${m.big!=null?fmt(m.big):'–'}</td><td class="num">${m.small!=null?fmt(m.small):'–'}</td><td class="num">${m.loose!=null?fmt(m.loose):'–'}</td>
@@ -440,11 +469,12 @@ function viewOutbound(){
   }).join('');
   const manualOpts=prodList().filter(p=>!p.amtKey).map(p=>`<option value="${p.key}">${escHtml(p.name)}</option>`).join('');
   return `<h1 class="page-title">⬆️ 출고 관리</h1><p class="page-sub">AMT 발주출고는 합계수량이 자동으로 들어옵니다. 대박스/소박스/낱개·택배비만 직접 입력하세요.</p>
-    <div class="card"><h3 style="margin:0 0 4px;font-size:.95rem">AMT 발주출고 (자동) · ${outs.length}건</h3><p class="page-sub" style="margin-bottom:10px">기본 택배비 ₩${fmt(defaultFee())} (칸 비우면 자동 적용 · 다르면 직접 입력)</p>
-      <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>거래처</th><th>제품</th><th class="num">대박스</th><th class="num">소박스</th><th class="num">낱개</th><th class="num">합계(개)</th><th class="num">택배비</th><th>비고</th></tr></thead><tbody>${autoRows||'<tr><td colspan="9" class="empty">AMT 발주출고 기록이 없습니다</td></tr>'}</tbody></table></div></div>
-    <div class="card"><h3 style="margin:0 0 4px;font-size:.95rem">수동 제품 출고 등록 (TBAND S · BBAND 등 비AMT 제품)</h3><p class="page-sub" style="margin-bottom:10px">JUC·DELL·MEDIAS 외 제품의 출고를 직접 등록합니다. 등록 후 <b>수정·삭제</b> 가능합니다.</p>
+    ${dateBar('out')}
+    <div class="card"><h3 style="margin:0 0 4px;font-size:.95rem">AMT 발주출고 (자동) · ${outs.length}건</h3><p class="page-sub" style="margin-bottom:10px">기본 택배비 ₩${fmt(defaultFee())} (칸 비우면 자동 적용 · 다르면 직접 입력) · 위 기간 기준</p>
+      <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>거래처</th><th>제품</th><th class="num">대박스</th><th class="num">소박스</th><th class="num">낱개</th><th class="num">합계(개)</th><th class="num">택배비</th><th>비고</th></tr></thead><tbody>${autoRows||'<tr><td colspan="9" class="empty">이 기간에 AMT 발주출고 기록이 없습니다</td></tr>'}</tbody></table></div></div>
+    <div class="card"><h3 style="margin:0 0 4px;font-size:.95rem">수동 제품 출고 등록 (TBAND S · BBAND 등 비AMT 제품)</h3><p class="page-sub" style="margin-bottom:10px">JUC·DELL·MEDIAS 외 제품의 출고를 직접 등록합니다. 등록 후 <b>수정·삭제</b> 가능합니다. (목록은 위 기간 기준)</p>
       <div class="row-flex" style="margin-bottom:12px"><input type="date" id="moDate" value="${todayStr()}" class="cell-input wide" style="width:150px"><select id="moProd" class="cell-input wide" style="width:160px">${manualOpts}</select><input type="text" id="moVendor" placeholder="거래처" class="cell-input wide"><input type="number" id="moQty" placeholder="합계수량" class="cell-input" style="width:100px"><input type="number" id="moBig" placeholder="대박스" class="cell-input"><input type="number" id="moSmall" placeholder="소박스" class="cell-input"><input type="number" id="moLoose" placeholder="낱개" class="cell-input"><input type="number" id="moFee" placeholder="택배비" class="cell-input" value="${defaultFee()}"><input type="text" id="moNote" placeholder="비고" class="cell-input wide"><button class="btn btn-blue btn-sm" id="moSave">+ 출고 등록</button></div>
-      <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>거래처</th><th>제품</th><th class="num">대박스</th><th class="num">소박스</th><th class="num">낱개</th><th class="num">합계(개)</th><th class="num">택배비</th><th>비고</th><th style="text-align:right">관리</th></tr></thead><tbody>${manRows||'<tr><td colspan="10" class="empty">수동 출고 기록 없음</td></tr>'}</tbody></table></div></div>`;
+      <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>거래처</th><th>제품</th><th class="num">대박스</th><th class="num">소박스</th><th class="num">낱개</th><th class="num">합계(개)</th><th class="num">택배비</th><th>비고</th><th style="text-align:right">관리</th></tr></thead><tbody>${manRows||'<tr><td colspan="10" class="empty">이 기간에 수동 출고 기록 없음</td></tr>'}</tbody></table></div></div>`;
 }
 
 /* 12. 택배비 관리 */
@@ -459,13 +489,63 @@ function viewFee(){
   const rows=allFeeRows(); const byMonth={};
   rows.forEach(r=>{ const m=(r.date||'').slice(0,7); (byMonth[m]=byMonth[m]||{cnt:0,sum:0}); byMonth[m].cnt++; byMonth[m].sum+=r.fee; });
   const months=Object.keys(byMonth).sort().reverse(); const total=rows.reduce((s,r)=>s+r.fee,0); const curMonth=todayStr().slice(0,7);
-  const monthCards=months.slice(0,6).map(m=>{ const d=byMonth[m]; return `<div class="box-chip" style="padding:12px 16px;border-radius:12px;${m===curMonth?'border-color:var(--blue);background:var(--blue-bg)':''}"><div style="font-size:.78rem;color:var(--sub)">${m}${m===curMonth?' (이번달)':''}</div><div style="font-size:1.25rem;font-weight:800" class="mono">₩${fmt(d.sum)}</div><div style="font-size:.72rem;color:var(--sub)">건수 ${d.cnt}건 · 익월 초 정산</div></div>`; }).join('');
-  const detail=rows.slice(0,120).map(r=>`<tr><td>${escHtml(r.date)}</td><td>${escHtml(r.vendor)||'<span style="color:#cbd5e1">—</span>'}</td><td>${r.kind==='extra'?'<span class="badge b-gray">기타</span> ':''}${escHtml(r.prod)}</td><td class="num mono">${r.qty>0?fmt(r.qty):'<span style="color:#cbd5e1">—</span>'}</td><td class="num mono" style="color:var(--blue)">₩${fmt(r.fee)}</td><td style="text-align:right">${r.kind==='extra'?`<button class="btn btn-ghost btn-sm" data-delfee="${escHtml(r.id)}">삭제</button>`:'<span style="color:#cbd5e1">—</span>'}</td></tr>`).join('');
+  const shownMonths=_feeMonthsAll?months:months.slice(0,6);
+  const monthCards=shownMonths.map(m=>{ const d=byMonth[m]; return `<div class="box-chip" style="padding:12px 16px;border-radius:12px;${m===curMonth?'border-color:var(--blue);background:var(--blue-bg)':''}"><div style="font-size:.78rem;color:var(--sub)">${m}${m===curMonth?' (이번달)':''}</div><div style="font-size:1.25rem;font-weight:800" class="mono">₩${fmt(d.sum)}</div><div style="font-size:.72rem;color:var(--sub)">건수 ${d.cnt}건 · 익월 초 정산</div></div>`; }).join('');
+  const moreBtn=(months.length>6)?`<button class="btn btn-ghost btn-sm" id="feeMonthsToggle" style="align-self:center">${_feeMonthsAll?'최근 6개월만 보기':'더보기 ('+(months.length-6)+'개월)'}</button>`:'';
+  const fRows=_limit(rows,'fee');
+  const fTotal=fRows.reduce((s,r)=>s+r.fee,0);
+  const detail=fRows.slice(0,300).map(r=>`<tr><td>${escHtml(r.date)}</td><td>${escHtml(r.vendor)||'<span style="color:#cbd5e1">—</span>'}</td><td>${r.kind==='extra'?'<span class="badge b-gray">기타</span> ':''}${escHtml(r.prod)}</td><td class="num mono">${r.qty>0?fmt(r.qty):'<span style="color:#cbd5e1">—</span>'}</td><td class="num mono" style="color:var(--blue)">₩${fmt(r.fee)}</td><td style="text-align:right">${r.kind==='extra'?`<button class="btn btn-ghost btn-sm" data-delfee="${escHtml(r.id)}">삭제</button>`:'<span style="color:#cbd5e1">—</span>'}</td></tr>`).join('');
   return `<h1 class="page-title">🚚 택배비 관리</h1><p class="page-sub">출고 기록 + 기타 택배비 · 익월 초 정산 기준 · 총 누계 <b>₩${fmt(total)}</b></p>
-    <div class="card"><div class="row-flex" style="justify-content:space-between"><h3 style="margin:0;font-size:.95rem">월별 택배비 현황</h3><button class="btn btn-blue btn-sm" id="addFeeBtn">+ 택배비 추가</button></div>
-      <div class="row-flex" style="gap:12px;margin-top:12px">${monthCards||'<span class="empty">기록 없음</span>'}</div></div>
+    <div class="card"><div class="row-flex" style="justify-content:space-between"><h3 style="margin:0;font-size:.95rem">월별 택배비 현황 ${_feeMonthsAll?'(전체)':'(최근 6개월)'}</h3><button class="btn btn-blue btn-sm" id="addFeeBtn">+ 택배비 추가</button></div>
+      <div class="row-flex" style="gap:12px;margin-top:12px">${monthCards||'<span class="empty">기록 없음</span>'} ${moreBtn}</div></div>
     <div class="info-banner">제품 발송 외 택배(서류·샘플 등)는 <b>+ 택배비 추가</b>로 거래처·제품 없이 택배비만 등록할 수 있습니다. 재고에는 영향이 없습니다.</div>
-    <div class="card"><h3 style="margin:0 0 10px;font-size:.95rem">상세 내역 (최근 120건)</h3><div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>거래처</th><th>제품</th><th class="num">출고수량(개)</th><th class="num">택배비</th><th style="text-align:right">관리</th></tr></thead><tbody>${detail||'<tr><td colspan="6" class="empty">택배비 기록 없음</td></tr>'}</tbody></table></div></div>`;
+    <div class="card"><h3 style="margin:0 0 10px;font-size:.95rem">상세 내역 <span style="color:var(--sub);font-weight:400">· 기간 합계 ₩${fmt(fTotal)} (${fRows.length}건)</span></h3>
+      ${dateBar('fee')}
+      <div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>거래처</th><th>제품</th><th class="num">출고수량(개)</th><th class="num">택배비</th><th style="text-align:right">관리</th></tr></thead><tbody>${detail||'<tr><td colspan="6" class="empty">이 기간에 택배비 기록 없음</td></tr>'}</tbody></table></div></div>`;
+}
+/* 백업/복원 (AMT-GMP 패턴) — inv_backups 노드, 매일 1회 자동, 90일 후 자동삭제 */
+function downloadBlob(name, text){ const b=new Blob([text],{type:'application/json'}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),1000); }
+async function exportData(){
+  toast('백업 파일 생성 중...');
+  try{
+    const data=(await get(ref(newDb,'audit_data'))).val()||null;
+    const out={ _app:'KY-AUDIT', _exportedAt:new Date().toISOString(), _by:curName, data };
+    downloadBlob('KY재고감사-backup-'+todayStr()+'.json', JSON.stringify(out,null,2));
+    toast('✅ 백업 파일을 내려받았습니다','ok');
+  }catch(e){ toast('내보내기 실패: '+e.message,'error'); }
+}
+function importData(){
+  if(!isSuper()){ toast('총괄관리자만 가능합니다','error'); return; }
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='application/json,.json';
+  inp.addEventListener('change', async ()=>{
+    const f=inp.files&&inp.files[0]; if(!f) return;
+    let obj; try{ obj=JSON.parse(await f.text()); }catch(_){ toast('JSON 파일이 올바르지 않습니다','error'); return; }
+    if(!obj || !obj.data){ toast('백업 데이터를 찾을 수 없습니다','error'); return; }
+    if(obj._app!=='KY-AUDIT' && !confirm('이 앱의 백업 파일이 아닐 수 있습니다. 그래도 복원할까요?')) return;
+    if(!confirm('현재 데이터를 백업 파일 내용으로 전부 덮어씁니다. 계속할까요?')) return;
+    if(prompt("되돌릴 수 없습니다. 진행하려면 '복원' 을 입력하세요:")!=='복원'){ toast('취소되었습니다'); return; }
+    try{ await set(ref(newDb,'audit_data'), obj.data); toast('✅ 복원 완료 — 새로고침합니다','ok'); setTimeout(()=>location.reload(),900); }
+    catch(e){ toast('복원 실패: '+e.message,'error'); }
+  });
+  inp.click();
+}
+async function purgeBackups(){
+  try{
+    const all=(await get(ref(newDb,'inv_backups'))).val()||{};
+    const c=new Date(); c.setDate(c.getDate()-90); const cutoff=_ymd(c);
+    for(const k of Object.keys(all)){ if(k==='_meta') continue; if(k<cutoff){ await set(ref(newDb,'inv_backups/'+k), null); } }
+  }catch(e){}
+}
+async function dailyAutoBackup(){
+  try{
+    const today=todayStr();
+    const last=(await get(ref(newDb,'inv_backups/_meta/lastDate'))).val();
+    if(last===today) return;
+    const data=(await get(ref(newDb,'audit_data'))).val()||null;
+    await set(ref(newDb,'inv_backups/'+today), { ts:Date.now(), by:curName, data });
+    await set(ref(newDb,'inv_backups/_meta/lastDate'), today);
+    await purgeBackups();
+  }catch(e){ /* 백업 실패해도 앱 동작엔 영향 없음 */ }
 }
 /* 기타 택배비 추가 모달 (거래처·제품 없이 택배비만 가능) */
 function openExtraFeeModal(){
@@ -519,9 +599,13 @@ function viewSettings(){
   const adminCard = `<div class="card"><div class="row-flex" style="justify-content:space-between;margin-bottom:10px"><h3 style="margin:0;font-size:.95rem">👥 관리자 관리 ${isSuper()?'':'<span class="badge b-gray" style="margin-left:6px">총괄만 수정</span>'}</h3>${isSuper()?'<button class="btn btn-blue btn-sm" id="addAdminBtn">+ 일반관리자 등록</button>':''}</div>
     <div class="tbl-wrap"><table style="min-width:420px"><thead><tr><th>이름</th><th>이메일</th><th>권한</th><th style="text-align:right">관리</th></tr></thead><tbody>${adminRows||'<tr><td colspan="4" class="empty">등록된 관리자 없음</td></tr>'}</tbody></table></div>
     ${isSuper()?'<div class="hint">일반관리자는 등록 후, 해당 직원이 본인 이메일+비밀번호로 첫 로그인하면 활성화됩니다. (비밀번호는 여기서 지정한 값)</div>':''}</div>`;
-  return `<h1 class="page-title">⚙️ 설정</h1><p class="page-sub">기본 택배비 · 관리자 · 연결 정보</p>
+  const backupCard = `<div class="card"><h3 style="margin:0 0 8px;font-size:.95rem">💾 백업 / 복원</h3>
+    <div style="font-size:.82rem;color:var(--sub);line-height:1.6;margin-bottom:10px">매일 1회 자동으로 Firebase에 백업되며 <b>3개월(90일) 후 자동 삭제</b>됩니다. 가장 확실한 보관은 아래 <b>JSON 내보내기</b>로 파일을 받아 PC·구글드라이브에 두는 것입니다.</div>
+    <div class="row-flex"><button class="btn btn-blue btn-sm" id="expBtn">⬇ JSON 내보내기</button>${isSuper()?'<button class="btn btn-ghost btn-sm" id="impBtn">⬆ JSON 가져오기(복원)</button>':'<span class="badge b-gray">복원은 총괄만</span>'}</div></div>`;
+  return `<h1 class="page-title">⚙️ 설정</h1><p class="page-sub">기본 택배비 · 관리자 · 백업 · 연결 정보</p>
     <div class="card"><h3 style="margin:0 0 10px;font-size:.95rem">기본 택배비</h3><div class="row-flex"><input type="number" id="setFee" class="cell-input" style="width:120px" value="${defaultFee()}"><span style="color:var(--sub);font-size:.85rem">원 (출고 등록 시 자동 적용)</span><button class="btn btn-blue btn-sm" id="setFeeSave">저장</button></div></div>
     ${adminCard}
+    ${backupCard}
     <div class="card"><h3 style="margin:0 0 8px;font-size:.95rem">연결 정보</h3><div style="font-size:.84rem;color:var(--sub);line-height:1.8">재고 데이터: <b>amt-ky</b> (주문시스템, 읽기 전용) ${amtReadOk?'<span class="badge b-green">연결됨</span>':'<span class="badge b-red">권한없음</span>'}<br>감사 데이터: <b>inventory-management-9a77b</b><br>로그인: <b>${escHtml(curEmail)}</b> (${escHtml(curName)})<br>재고이력 ${fmt(invLogs.length)}건 로드됨</div></div>`;
 }
 
@@ -563,8 +647,12 @@ document.addEventListener('click', async (e)=>{
   if(t.dataset.editmove){ openEditMoveModal(t.dataset.editmove); return; }
   if(t.id==='setFeeSave'){ audit.config.shipFee=toNum(document.getElementById('setFee').value)||4500; await saveAudit('config',audit.config); return; }
   if(t.id==='addFeeBtn'){ openExtraFeeModal(); return; }
+  if(t.dataset.fltpreset){ const parts=t.dataset.fltpreset.split(':'); applyPreset(parts[0],parts[1]); render(); return; }
+  if(t.id==='feeMonthsToggle'){ _feeMonthsAll=!_feeMonthsAll; render(); return; }
   if(t.dataset.delfee){ if(!confirm('이 택배비 기록을 삭제할까요?')) return; const id=t.dataset.delfee; try{ await set(ref(newDb,'audit_data/extraFees/'+id),null); toast('삭제되었습니다','ok'); }catch(err){ toast('삭제 실패: '+err.message,'error'); } return; }
   if(t.id==='addAdminBtn'){ openAdminModal(); return; }
+  if(t.id==='expBtn'){ exportData(); return; }
+  if(t.id==='impBtn'){ importData(); return; }
   if(t.dataset.deladmin){ if(!isSuper()){ toast('총괄관리자만 가능합니다','error'); return; } const key=t.dataset.deladmin; if(!confirm('이 관리자를 삭제할까요? (로그인 불가가 됩니다)')) return; try{ await set(ref(newDb,'inv_admins/'+key),null); await set(ref(newDb,'admin_emails/'+key),null); toast('삭제되었습니다','ok'); }catch(err){ toast('삭제 실패: '+err.message,'error'); } return; }
   if(t.id==='logoutBtn'){ try{await signOut(newAuth);}catch(e){} try{await signOut(amtAuth);}catch(e){} location.reload(); return; }
   if(t.id==='refreshBtn'){ render(); toast('새로고침','ok'); return; }
@@ -572,6 +660,7 @@ document.addEventListener('click', async (e)=>{
 document.addEventListener('change', async (e)=>{
   const t=e.target;
   if(t.classList && t.classList.contains('aud')){ const {pk,loc,f}=t.dataset; audit.audit[pk]=audit.audit[pk]||{loc:{}}; audit.audit[pk].loc=audit.audit[pk].loc||{}; audit.audit[pk].loc[loc]=audit.audit[pk].loc[loc]||{}; audit.audit[pk].loc[loc][f]= (f==='memo')?t.value : (t.value===''?null:toNum(t.value)); await saveAudit('audit/'+pk,audit.audit[pk]); if(f!=='memo') render(); return; }
+  if(t.dataset && t.dataset.flt){ const sec=t.dataset.flt, fk=t.dataset.fk; _flt[sec]=_flt[sec]||{from:'',to:''}; _flt[sec][fk]=t.value||''; render(); return; }
   if(t.dataset && t.dataset.auditdate!=null){ const pk=t.dataset.auditdate; audit.audit[pk]=audit.audit[pk]||{loc:{}}; audit.audit[pk].auditDate=t.value||''; await saveAudit('audit/'+pk,audit.audit[pk]); return; }
   if(t.dataset && t.dataset.outmeta){ const id=t.dataset.outmeta,f=t.dataset.f; audit.outMeta[id]=audit.outMeta[id]||{}; audit.outMeta[id][f]=(f==='note'||f==='supplier')?t.value:(t.value===''?null:toNum(t.value)); await saveAudit('outMeta/'+id,audit.outMeta[id]); if(f==='fee'||f==='big'||f==='small'||f==='loose') render(); return; }
   if(t.dataset && t.dataset.inmeta){ const id=t.dataset.inmeta,f=t.dataset.f; audit.inMeta[id]=audit.inMeta[id]||{}; audit.inMeta[id][f]=(f==='note'||f==='supplier')?t.value:(t.value===''?null:toNum(t.value)); await saveAudit('inMeta/'+id,audit.inMeta[id]); return; }
@@ -586,7 +675,7 @@ function openEditMoveModal(id){
   m.innerHTML='<div class="modal"><h3>'+(isOut?'출고':'입고')+' 기록 수정</h3>'+
     '<div class="field"><label>날짜 *</label><input id="e_date" type="date" value="'+escHtml(m0.date||todayStr())+'"></div>'+
     '<div class="field"><label>제품 *</label><select id="e_prod">'+opts+'</select></div>'+
-    '<div class="field"><label>'+(isOut?'거래처':'공급업체')+'</label><input id="e_vendor" value="'+escHtml(m0.vendor||'')+'"></div>'+
+    (isOut?'<div class="field"><label>거래처</label><input id="e_vendor" value="'+escHtml(m0.vendor||'')+'"></div>':'')+
     '<div class="field"><label>합계수량 *</label><input id="e_qty" type="number" value="'+escHtml(m0.qty)+'"></div>'+
     '<div class="row-flex"><div class="field" style="flex:1"><label>대박스</label><input id="e_big" type="number" value="'+(m0.big!=null?escHtml(m0.big):'')+'"></div>'+
     '<div class="field" style="flex:1"><label>소박스</label><input id="e_small" type="number" value="'+(m0.small!=null?escHtml(m0.small):'')+'"></div>'+
@@ -603,7 +692,7 @@ function openEditMoveModal(id){
     const qty=toNum(m.querySelector('#e_qty').value);
     if(!date||!prodKey||qty<=0){ toast('날짜·제품·수량을 확인하세요','error'); return; }
     const big=m.querySelector('#e_big').value, small=m.querySelector('#e_small').value, loose=m.querySelector('#e_loose').value;
-    const rec={ id, date, prodKey, dir:m0.dir, qty, vendor:(m.querySelector('#e_vendor').value||'').trim(),
+    const rec={ id, date, prodKey, dir:m0.dir, qty, vendor:(m.querySelector('#e_vendor')?m.querySelector('#e_vendor').value.trim():(m0.vendor||'')),
       big:big===''?null:toNum(big), small:small===''?null:toNum(small), loose:loose===''?null:toNum(loose),
       note:(m.querySelector('#e_note').value||'').trim(), createdAt:m0.createdAt||new Date().toISOString(), updatedAt:new Date().toISOString() };
     if(isOut){ const f=m.querySelector('#e_fee').value; rec.fee=f===''?null:toNum(f); }
@@ -615,7 +704,8 @@ async function addManualMove(dir){
   const pre=dir==='in'?'mi':'mo';
   const date=document.getElementById(pre+'Date').value;
   const prodKey=document.getElementById(pre+'Prod').value;
-  const vendor=document.getElementById(pre+'Vendor').value.trim();
+  const vendorEl=document.getElementById(pre+'Vendor');
+  const vendor=vendorEl?vendorEl.value.trim():'';
   const qty=toNum(document.getElementById(pre+'Qty').value);
   const big=document.getElementById(pre+'Big').value, small=document.getElementById(pre+'Small').value, loose=document.getElementById(pre+'Loose').value;
   const note=document.getElementById(pre+'Note').value.trim();
